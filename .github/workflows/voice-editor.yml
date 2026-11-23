@@ -47,6 +47,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install requests
 
       - name: Validate project files
         run: |
@@ -78,12 +79,12 @@ jobs:
         env:
           JOB_ID: ${{ inputs.job_id }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           python - <<'PY'
           import json
           import os
           import urllib.request
-          import urllib.error
           from datetime import datetime, timezone
 
           job_id = os.environ["JOB_ID"]
@@ -111,10 +112,6 @@ jobs:
               }
 
               data = json.dumps(status).encode()
-              upload_url = (
-                  f"https://uploads.github.com/repos/{repository}"
-                  f"/releases/{release['id']}/assets?name=status.json"
-              )
 
               for asset in release.get("assets", []):
                   if asset["name"] == "status.json":
@@ -130,6 +127,11 @@ jobs:
                       with urllib.request.urlopen(delete_request, timeout=30):
                           pass
                       break
+
+              upload_url = (
+                  f"https://uploads.github.com/repos/{repository}"
+                  f"/releases/{release['id']}/assets?name=status.json"
+              )
 
               upload_headers = dict(headers)
               upload_headers["Content-Type"] = "application/json"
