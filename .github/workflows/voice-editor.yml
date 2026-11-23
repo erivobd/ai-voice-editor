@@ -1,18 +1,20 @@
 
-name: Voice Editor Worker
+name: AI Voice Editor
 
 on:
   workflow_dispatch:
     inputs:
       job_id:
-        description: Job release tag
+        description: "Voice editing job ID"
         required: true
         type: string
       action:
-        description: analyze or render
+        description: "Action to perform"
         required: true
         type: choice
-        options: [analyze, render]
+        options:
+          - analyze
+          - render
 
 permissions:
   contents: write
@@ -22,91 +24,127 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  process:
+  voice-editor:
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    env:
-      GH_TOKEN: ${{ github.token }}
-      GH_REPO: ${{ github.repository }}
-      JOB_ID: ${{ inputs.job_id }}
-      ACTION: ${{ inputs.action }}
-      WORK_DIR: /tmp/voice_job
-      WHISPER_MODEL: small
 
     steps:
-      - name: Validate inputs
-        shell: bash
-        run: |
-          [[ "$JOB_ID" =~ ^job-[a-f0-9-]{20,40}$ ]] || { echo "Invalid job ID"; exit 1; }
-          [[ "$ACTION" == "analyze" || "$ACTION" == "render" ]] || { echo "Invalid action"; exit 1; }
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
+          cache: "pip"
 
-      - name: Install FFmpeg and Python packages
+      - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
+
+      - name: Install Python dependencies
+        run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Download job inputs and plan
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Validate project files
         run: |
-          mkdir -p "$WORK_DIR"
-          gh release download "$JOB_ID" --repo "$GH_REPO" --dir "$WORK_DIR"
-
-      - name: Mark job running
-        run: |
-          python - <<'PY'
-          import json, os, datetime
-          p=os.path.join(os.environ["WORK_DIR"],"status.json")
-          d={"status":"running","stage":os.environ["ACTION"]+"ing","message":"Worker started","updated_at":datetime.datetime.now(datetime.timezone.utc).isoformat()}
-          open(p,"w").write(json.dumps(d))
-          PY
-          gh release upload "$JOB_ID" "$WORK_DIR/status.json" --repo "$GH_REPO" --clobber
+          test -f analyze.py
+          test -f render.py
+          test -f requirements.txt
+          echo "Project files found successfully."
 
       - name: Analyze recording
-        if: inputs.action == 'analyze'
+        if: ${{ inputs.action == 'analyze' }}
+        env:
+          JOB_ID: ${{ inputs.job_id }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          python processor/analyze.py
-          test -s "$WORK_DIR/report.json"
-          test -s "$WORK_DIR/nr_preview.wav"
-          gh release upload "$JOB_ID" "$WORK_DIR/report.json" "$WORK_DIR/nr_preview.wav" --repo "$GH_REPO" --clobber
-          python - <<'PY'
-          import json,os,datetime
-          p=os.path.join(os.environ["WORK_DIR"],"status.json")
-          open(p,"w").write(json.dumps({"status":"completed","stage":"review_ready","message":"Analysis complete. Review each suggested edit.","updated_at":datetime.datetime.now(datetime.timezone.utc).isoformat()}))
-          PY
-          gh release upload "$JOB_ID" "$WORK_DIR/status.json" --repo "$GH_REPO" --clobber
+          python analyze.py
 
       - name: Render approved edits
-        if: inputs.action == 'render'
+        if: ${{ inputs.action == 'render' }}
+        env:
+          JOB_ID: ${{ inputs.job_id }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          test -s "$WORK_DIR/approved_plan.json"
-          python processor/render.py
-          test -s "$WORK_DIR/final_edited.mp3"
-          test -s "$WORK_DIR/final_edited.wav"
-          gh release upload "$JOB_ID" "$WORK_DIR/final_edited.mp3" "$WORK_DIR/final_edited.wav" "$WORK_DIR/editing_report.json" --repo "$GH_REPO" --clobber
-          python - <<'PY'
-          import json,os,datetime
-          p=os.path.join(os.environ["WORK_DIR"],"status.json")
-          open(p,"w").write(json.dumps({"status":"completed","stage":"completed","message":"Rendering complete. Files are ready to download.","updated_at":datetime.datetime.now(datetime.timezone.utc).isoformat()}))
-          PY
-          gh release upload "$JOB_ID" "$WORK_DIR/status.json" --repo "$GH_REPO" --clobber
+          python render.py
 
       - name: Publish failure status
-        if: failure()
+        if: ${{ failure() }}
+        env:
+          JOB_ID: ${{ inputs.job_id }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p "$WORK_DIR"
           python - <<'PY'
-          import json,os,datetime
-          p=os.path.join(os.environ["WORK_DIR"],"status.json")
-          open(p,"w").write(json.dumps({"status":"failed","stage":"error","message":"Processing failed. Check the GitHub Actions run log for details.","updated_at":datetime.datetime.now(datetime.timezone.utc).isoformat()}))
+          import json
+          import os
+          import urllib.request
+          import urllib.error
+          from datetime import datetime, timezone
+
+          job_id = os.environ["JOB_ID"]
+          token = os.environ["GITHUB_TOKEN"]
+          repository = os.environ["GITHUB_REPOSITORY"]
+
+          api = f"https://api.github.com/repos/{repository}/releases/tags/{job_id}"
+
+          headers = {
+              "Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28"
+          }
+
+          try:
+              request = urllib.request.Request(api, headers=headers)
+              with urllib.request.urlopen(request, timeout=30) as response:
+                  release = json.loads(response.read().decode())
+
+              status = {
+                  "status": "error",
+                  "stage": "failed",
+                  "message": "Processing failed. Check the GitHub Actions run log for details.",
+                  "updated_at": datetime.now(timezone.utc).isoformat()
+              }
+
+              data = json.dumps(status).encode()
+              upload_url = (
+                  f"https://uploads.github.com/repos/{repository}"
+                  f"/releases/{release['id']}/assets?name=status.json"
+              )
+
+              for asset in release.get("assets", []):
+                  if asset["name"] == "status.json":
+                      delete_url = (
+                          f"https://api.github.com/repos/{repository}"
+                          f"/releases/assets/{asset['id']}"
+                      )
+                      delete_request = urllib.request.Request(
+                          delete_url,
+                          headers=headers,
+                          method="DELETE"
+                      )
+                      with urllib.request.urlopen(delete_request, timeout=30):
+                          pass
+                      break
+
+              upload_headers = dict(headers)
+              upload_headers["Content-Type"] = "application/json"
+
+              upload_request = urllib.request.Request(
+                  upload_url,
+                  data=data,
+                  headers=upload_headers,
+                  method="POST"
+              )
+
+              with urllib.request.urlopen(upload_request, timeout=30):
+                  print("Failure status published successfully.")
+
+          except Exception as error:
+              print(f"Could not publish failure status: {error}")
+              raise
           PY
-          gh release upload "$JOB_ID" "$WORK_DIR/status.json" --repo "$GH_REPO" --clobber || true
