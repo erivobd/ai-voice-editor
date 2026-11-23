@@ -20,6 +20,8 @@ const BRANCH = process.env.GITHUB_BRANCH || 'main';
 const ACCESS_PIN = process.env.APP_ACCESS_PIN || '';
 const MAX_UPLOAD_BYTES = 150 * 1024 * 1024;
 const TMP_DIR = '/tmp/voice-editor-uploads';
+const PUBLIC_DIR = path.join(__dirname, 'public');
+const INDEX_FILE = path.join(PUBLIC_DIR, 'index.html');
 const SAFE_ASSETS = new Set([
   'status.json', 'report.json', 'nr_preview.wav', 'approved_plan.json',
   'editing_report.json', 'final_edited.mp3', 'final_edited.wav'
@@ -277,7 +279,16 @@ app.get('/api/jobs/:jobId/assets/:assetName', async (req, res, next) => {
   } catch (e) { if (!res.headersSent) next(e); else res.destroy(e); }
 });
 
-app.use(express.static(path.join(__dirname, 'public')));
+function serveIndex(req, res, next) {
+  res.sendFile(INDEX_FILE, err => {
+    if (err) next(err);
+  });
+}
+
+app.get('/', serveIndex);
+app.get('/index.html', serveIndex);
+app.use(express.static(PUBLIC_DIR));
+
 app.use((err, req, res, next) => {
   console.error(err);
   if (res.headersSent) return next(err);
