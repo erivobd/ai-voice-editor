@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: ai-voice-editor
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: GITHUB_OWNER
+        sync: false
+      - key: GITHUB_REPO
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: GITHUB_WORKFLOW_FILE
+        value: voice-editor.yml
+      - key: GITHUB_BRANCH
+        value: main
+      - key: APP_ACCESS_PIN
+        sync: false

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="bn">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#101827">
+  <title>AI Voice Editor</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="top"><div><h1>🎙️ AI Voice Editor</h1><p>তোমার আসল কণ্ঠ অপরিবর্তিত রেখে অডিও এডিট করো</p></div><button id="btn-lock-pin" class="ghost hidden">লক</button></header>
+<main>
+<section id="pin-card" class="panel hidden"><h2>অ্যাক্সেস PIN</h2><p>অ্যাপ ব্যবহার করতে PIN দাও।</p><input id="pin-input" type="password" inputmode="numeric" placeholder="Access PIN"><p id="pin-error" class="error hidden">PIN সঠিক নয়। আবার চেষ্টা করো।</p><button id="btn-save-pin">Unlock</button></section>
+
+<section id="upload-card" class="panel">
+  <h2>নতুন অডিও বিশ্লেষণ</h2>
+  <p class="muted">অডিও এবং সম্ভব হলে তোমার বাংলা ভয়েস স্ক্রিপ্ট আপলোড করো।</p>
+  <form id="upload-form">
+    <label>অডিও ফাইল <input id="audio-input" type="file" accept=".mp3,.wav,.m4a,.aac,.flac" required></label>
+    <small id="audio-meta">MP3, WAV, M4A, AAC বা FLAC (সর্বোচ্চ ১৫০ MB)</small>
+    <label>বাংলা স্ক্রিপ্ট (ঐচ্ছিক) <input id="script-input" type="file" accept=".txt"></label>
+    <small id="script-meta">TXT ফাইল দিলে স্ক্রিপ্টের সঙ্গে মিলিয়ে দেখা হবে।</small>
+    <button id="btn-upload" type="submit">আপলোড ও বিশ্লেষণ শুরু</button>
+  </form>
+  <div id="upload-progress-wrap" class="hidden"><div class="progress"><div id="upload-bar-fill"></div></div><span id="upload-percent">0%</span> <span id="upload-status-text"></span></div>
+  <button id="btn-history-toggle" class="ghost">আগের কাজগুলো দেখো</button>
+</section>
+
+<section id="history-card" class="panel hidden"><div class="section-head"><h2>আগের কাজ</h2><button id="btn-close-history" class="ghost">বন্ধ</button></div><div id="history-list"></div></section>
+
+<section id="status-card" class="panel hidden"><div class="spinner" id="status-spinner"></div><h2 id="status-title">Processing</h2><p id="status-message">অপেক্ষা করো...</p><p id="status-job-id" class="muted"></p><div id="status-actions" class="hidden"><button id="btn-retry-status" class="ghost">আবার চেষ্টা</button><button id="btn-status-new-job" class="ghost">নতুন কাজ</button></div></section>
+
+<section id="review-card" class="panel hidden">
+  <h2>রিভিউ ও কাট অনুমোদন</h2><p id="review-summary-text" class="muted"></p>
+  <div id="missing-lines-box" class="notice hidden"><strong>স্ক্রিপ্টের যেসব লাইন মেলেনি</strong><ul id="missing-lines-list"></ul><small>এগুলো শুধু সতর্কতা, নিজে থেকে কাটা হবে না।</small></div>
+  <div class="playerbox"><strong id="player-label">Original narration</strong><audio id="audio-player" controls preload="metadata"></audio><span id="player-time">00:00.0</span><p id="player-error" class="error hidden"></p></div>
+  <button id="btn-preview-nr" class="ghost">১০ সেকেন্ডের Noise Reduction Preview</button>
+  <div class="section-head"><h3>প্রস্তাবিত এডিট</h3><div><button id="btn-approve-all" class="ghost">সব অনুমোদন</button><button id="btn-reject-all" class="ghost">সব বাতিল</button></div></div>
+  <p class="warning">প্রতিটি অংশ শুনে নিশ্চিত হও। দীর্ঘ বিরতি সবসময় ভুল নয়। কোনো কাট স্বয়ংক্রিয়ভাবে অনুমোদিত নয়।</p>
+  <div id="edits-list"></div>
+  <div class="panel inner"><h3>অডিও আউটপুট</h3><label><input type="radio" name="nr_mode" value="original" checked> Original audio (ডিফল্ট)</label><label><input type="radio" name="nr_mode" value="gentle"> Gentle noise reduction</label><p class="muted">কণ্ঠের pitch, speed বা পরিচয় বদলানো হয় না।</p><button id="btn-render-final">অনুমোদিত কাট দিয়ে Render</button></div>
+  <button id="btn-new-job" class="ghost">নতুন কাজ শুরু</button>
+</section>
+
+<section id="download-card" class="panel hidden"><h2>এডিট সম্পন্ন ✅</h2><p id="final-stats" class="muted"></p><audio id="final-player" controls></audio><p id="final-player-error" class="error hidden"></p><div class="downloads"><a id="dl-mp3">MP3 320 kbps ডাউনলোড</a><a id="dl-wav">WAV ডাউনলোড</a><a id="dl-report">এডিট রিপোর্ট</a><a id="dl-original">Original অডিও</a></div><button id="btn-back-to-review" class="ghost">রিভিউতে ফিরে যাও</button><button id="btn-download-new-job" class="ghost">নতুন কাজ</button></section>
+</main>
+<footer>তোমার ভয়েসই থাকবে আসল। AI শুধু বিশ্লেষণ ও কাটের পরামর্শ দেয়।</footer>
+<script src="/app.js" defer></script>
+</body></html>
