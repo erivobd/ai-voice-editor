@@ -134,15 +134,42 @@ async function init() {
 
     el('audio-meta').textContent = file
       ? `${file.name} (${formatBytes(file.size)})`
-      : 'MP3, WAV, M4A, AAC, FLAC, OGG, OPUS ইত্যাদি';
+      : 'MP3, WAV, M4A, AAC, FLAC ইত্যাদি';
   });
 
   el('script-input').addEventListener('change', event => {
     const file = event.target.files[0];
+    const pastedText = el('script-text-input').value.trim();
 
-    el('script-meta').textContent = file
-      ? `${file.name} (${formatBytes(file.size)})`
-      : 'TXT ফাইল দিলে স্ক্রিপ্টের সঙ্গে মিলিয়ে দেখা হবে।';
+    if (file && pastedText) {
+      el('script-meta').textContent =
+        'পেস্ট করা স্ক্রিপ্ট ব্যবহার করা হবে। TXT ফাইলটি উপেক্ষা করা হবে।';
+    } else if (file) {
+      el('script-meta').textContent =
+        `${file.name} (${formatBytes(file.size)})`;
+    } else {
+      el('script-meta').textContent =
+        'স্ক্রিপ্ট পেস্ট অথবা TXT ফাইল, যেকোনো একটি ব্যবহার করো।';
+    }
+  });
+
+  el('script-text-input').addEventListener('input', () => {
+    const pastedText = el('script-text-input').value.trim();
+    const file = el('script-input').files[0];
+
+    if (pastedText && file) {
+      el('script-meta').textContent =
+        'পেস্ট করা স্ক্রিপ্ট ব্যবহার করা হবে। TXT ফাইলটি উপেক্ষা করা হবে।';
+    } else if (pastedText) {
+      el('script-meta').textContent =
+        `${pastedText.length.toLocaleString()} অক্ষরের স্ক্রিপ্ট প্রস্তুত।`;
+    } else if (file) {
+      el('script-meta').textContent =
+        `${file.name} (${formatBytes(file.size)})`;
+    } else {
+      el('script-meta').textContent =
+        'স্ক্রিপ্ট পেস্ট অথবা TXT ফাইল, যেকোনো একটি ব্যবহার করো।';
+    }
   });
 
   el('upload-form').addEventListener('submit', handleUpload);
@@ -176,10 +203,10 @@ async function init() {
     el('upload-form').reset();
 
     el('audio-meta').textContent =
-      'MP3, WAV, M4A, AAC, FLAC, OGG, OPUS ইত্যাদি';
+      'MP3, WAV, M4A, AAC, FLAC ইত্যাদি';
 
     el('script-meta').textContent =
-      'TXT ফাইল দিলে স্ক্রিপ্টের সঙ্গে মিলিয়ে দেখা হবে।';
+      'স্ক্রিপ্ট পেস্ট অথবা TXT ফাইল, যেকোনো একটি ব্যবহার করো।';
   };
 
   el('btn-status-new-job').addEventListener('click', reset);
@@ -207,10 +234,20 @@ function handleUpload(event) {
 
   formData.append('audio', audio);
 
-  const script = el('script-input').files[0];
+  const pastedText = el('script-text-input').value.trim();
+  const scriptFile = el('script-input').files[0];
 
-  if (script) {
-    formData.append('script', script);
+  // Pasted text takes priority over an uploaded TXT file.
+  if (pastedText) {
+    const scriptBlob = new Blob(
+      [pastedText],
+      { type: 'text/plain;charset=utf-8' }
+    );
+
+    formData.append('script', scriptBlob, 'script.txt');
+
+  } else if (scriptFile) {
+    formData.append('script', scriptFile);
   }
 
   const button = el('btn-upload');
@@ -238,7 +275,9 @@ function handleUpload(event) {
     el('upload-bar-fill').style.width = `${percent}%`;
 
     el('upload-status-text').textContent =
-      percent === 100 ? 'সার্ভারে পাঠানো হয়েছে...' : 'আপলোড হচ্ছে...';
+      percent === 100
+        ? 'সার্ভারে পাঠানো হয়েছে...'
+        : 'আপলোড হচ্ছে...';
   };
 
   xhr.onload = () => {
@@ -260,6 +299,7 @@ function handleUpload(event) {
         }
 
         loadJob(result.job_id);
+
       } catch (error) {
         alert(error.message || 'সার্ভারের উত্তর বোঝা যায়নি।');
       }
@@ -349,7 +389,6 @@ async function pollJobStatus() {
     el('status-stage-text').textContent =
       `বর্তমান ধাপ: ${stage}`;
 
-    // A final MP3 means the automatic render has completed.
     const hasFinalAudio = currentAssets.some(
       asset => asset.name === 'final_edited.mp3'
     );
@@ -379,7 +418,6 @@ async function pollJobStatus() {
       return;
     }
 
-    // Show approximate stage information, not fake percentage progress.
     if (currentReport) {
       el('status-percent').textContent = 'বিশ্লেষণ সম্পন্ন';
       el('status-progress-fill').style.width = '65%';
