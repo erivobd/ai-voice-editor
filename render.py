@@ -1,62 +1,231 @@
-import os, json, math, subprocess, glob
+
+import os
+import json
+import math
+import subprocess
 from pathlib import Path
 
-WORK = Path(os.environ.get("WORK_DIR","/tmp/voice_job"))
+WORK = Path(os.environ.get("WORK_DIR", "/tmp/voice_job"))
+MIN_KEEP_SEGMENT = 0.08
+MAX_CUT_RATIO = 0.60
+
 
 def run(cmd):
-    p=subprocess.run(cmd,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
-    if p.returncode: raise RuntimeError(f"FFmpeg failed: {p.stderr[-2500:]}")
+    p = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+    if p.returncode:
+        raise RuntimeError(f"FFmpeg failed: {p.stderr[-3000:]}")
     return p
 
+
 def probe(path):
-    p=run(["ffprobe","-v","error","-show_entries","format=duration:stream=sample_rate,channels,sample_fmt","-of","json",str(path)])
-    d=json.loads(p.stdout); s=next(x for x in d["streams"] if "sample_rate" in x)
-    return float(d["format"]["duration"]),int(s["sample_rate"]),int(s["channels"]),s.get("sample_fmt","s16")
+    p = run([
+        "ffprobe", "-v", "error",
+        "-show_entries",
+        "format=duration:stream=sample_rate,channels",
+        "-of", "json", str(path)
+    ])
+
+    data = json.loads(p.stdout)
+    streams = data.get("streams", [])
+
+    stream = next(
+        (x for x in streams if "sample_rate" in x),
+        None
+    )
+
+    if not stream:
+        raise RuntimeError("Could not read audio stream information.")
+
+    duration = float(data["format"]["duration"])
+    sample_rate = int(stream["sample_rate"])
+    channels = int(stream["channels"])
+
+    if not math.isfinite(duration) or duration <= 0:
+        raise RuntimeError("Invalid audio duration.")
+
+    return duration, sample_rate, channels
+
+
+def load_cuts(plan, duration):
+    cuts = []
+
+    for item in plan.get("approved_cuts", []):
+        start = float(item["start"])
+        end = float(item["end"])
+
+        if (
+            not math.isfinite(start)
+            or not math.isfinite(end)
+            or start < 0
+            or end <= start
+            or end > duration
+        ):
+            raise ValueError(
+                f"Invalid cut interval: {start} - {end}"
+            )
+
+        cuts.append((start, end))
+
+    cuts.sort()
+    merged = []
+
+    for start, end in cuts:
+        if merged and start <= merged[-1][1] + 0.02:
+            merged[-1] = (
+                merged[-1][0],
+                max(merged[-1][1], end)
+            )
+        else:
+            merged.append((start, end))
+
+    total_cut = sum(end - start for start, end in merged)
+
+    if total_cut / duration > MAX_CUT_RATIO:
+        raise ValueError(
+            "Safety stop: the cut plan would remove more than "
+            "60% of the original recording."
+        )
+
+    return merged
+
+
+def build_keep_segments(cuts, duration):
+    keep = []
+    position = 0.0
+
+    for start, end in cuts:
+        if start - position >= MIN_KEEP_SEGMENT:
+            keep.append((position, start))
+        position = max(position, end)
+
+    if duration - position >= MIN_KEEP_SEGMENT:
+        keep.append((position, duration))
+
+    if not keep:
+        raise ValueError("The cut plan would remove the entire recording.")
+
+    remaining = sum(end - start for start, end in keep)
+
+    if remaining < max(1.0, duration * 0.05):
+        raise ValueError("Too little audio would remain.")
+
+    return keep
+
+
+def render_audio(audio, keep, sample_rate, channels):
+    filters = []
+    labels = []
+
+    for i, (start, end) in enumerate(keep):
+        label = f"part{i}"
+        labels.append(f"[{label}]")
+
+        length = end - start
+        fade = min(0.015, length / 4)
+
+        filters.append(
+            f"[0:a]"
+            f"atrim=start={start:.6f}:end={end:.6f},"
+            f"asetpts=PTS-STARTPTS,"
+            f"afade=t=in:st=0:d={fade:.5f},"
+            f"afade=t=out:st={max(0, length-fade):.6f}:d={fade:.5f}"
+            f"[{label}]"
+        )
+
+    filters.append(
+        "".join(labels)
+        + f"concat=n={len(keep)}:v=0:a=1[out]"
+    )
+
+    filter_complex = ";".join(filters)
+    temp = WORK / "render_temp.wav"
+
+    run([
+        "ffmpeg", "-y",
+        "-i", str(audio),
+        "-filter_complex", filter_complex,
+        "-map", "[out]",
+        "-ar", str(sample_rate),
+        "-ac", str(channels),
+        "-c:a", "pcm_s24le",
+        str(temp)
+    ])
+
+    # High-quality MP3 export.
+    run([
+        "ffmpeg", "-y",
+        "-i", str(temp),
+        "-c:a", "libmp3lame",
+        "-b:a", "320k",
+        str(WORK / "final_edited.mp3")
+    ])
+
+    # Keep the lossless WAV output.
+    final_wav = WORK / "final_edited.wav"
+    temp.replace(final_wav)
+
+    return final_wav
+
 
 def main():
-    files=sorted(WORK.glob("original_audio.*"))
-    if len(files)!=1: raise RuntimeError(f"Expected one original audio file, found {len(files)}")
-    audio=files[0]; duration,sr,ch,sfmt=probe(audio)
-    plan=json.loads((WORK/"approved_plan.json").read_text(encoding="utf-8"))
-    cuts=[]
-    for c in plan.get("approved_cuts",[]):
-        a=float(c["start"]); b=float(c["end"])
-        if not math.isfinite(a) or not math.isfinite(b) or a<0 or b<=a or b>duration:
-            raise ValueError(f"Invalid approved cut interval: {a} - {b}")
-        cuts.append((a,b))
-    cuts.sort()
-    merged=[]
-    for a,b in cuts:
-        if merged and a<=merged[-1][1]+0.02: merged[-1]=(merged[-1][0],max(merged[-1][1],b))
-        else: merged.append((a,b))
-    keep=[]; pos=0.0
-    for a,b in merged:
-        if a-pos>0.08: keep.append((pos,a))
-        pos=b
-    if duration-pos>0.08: keep.append((pos,duration))
-    if not keep: raise ValueError("Approved cuts would remove the entire recording.")
-    if sum(b-a for a,b in keep)<max(1.0,duration*0.05): raise ValueError("Too little audio would remain after cuts.")
-    filters=[]; labels=[]
-    for i,(a,b) in enumerate(keep):
-        label=f"k{i}"; labels.append(f"[{label}]")
-        length=b-a
-        fade=min(0.015,length/4)
-        filters.append(f"[0:a]atrim=start={a:.6f}:end={b:.6f},asetpts=PTS-STARTPTS,afade=t=in:st=0:d={fade:.4f},afade=t=out:st={max(0,length-fade):.6f}:d={fade:.4f}[{label}]")
-    filters.append("".join(labels)+f"concat=n={len(keep)}:v=0:a=1[out]")
-    filt=";".join(filters)
-    if plan.get("noise_reduction")=="gentle": filt += ";[out]afftdn=nf=-25[final]"
-    else: filt += ";[out]anull[final]"
-    temp=WORK/"render_temp.wav"
-    # Export 24-bit PCM as a high-quality working WAV.
-    run(["ffmpeg","-y","-i",str(audio),"-filter_complex",filt,"-map","[final]","-ar",str(sr),"-ac",str(ch),"-c:a","pcm_s24le",str(temp)])
-    run(["ffmpeg","-y","-i",str(temp),"-c:a","libmp3lame","-b:a","320k",str(WORK/"final_edited.mp3")])
-    temp.replace(WORK/"final_edited.wav")
-    saved=sum(b-a for a,b in merged)
-    report={"original_duration_sec":round(duration,3),"final_duration_sec":round(sum(b-a for a,b in keep),3),
-            "time_saved_sec":round(saved,3),"merged_cuts_count":len(merged),
-            "noise_reduction_applied":plan.get("noise_reduction","original"),
-            "sample_rate":sr,"channels":ch,"wav_codec":"pcm_s24le",
-            "note":"No pitch shift, time stretch, voice conversion, or voice generation was applied."}
-    (WORK/"editing_report.json").write_text(json.dumps(report,indent=2),encoding="utf-8")
+    WORK.mkdir(parents=True, exist_ok=True)
 
-if __name__=="__main__": main()
+    audio_files = sorted(WORK.glob("original_audio.*"))
+
+    if len(audio_files) != 1:
+        raise RuntimeError(
+            f"Expected exactly one original audio file, found {len(audio_files)}"
+        )
+
+    audio = audio_files[0]
+    plan_path = WORK / "approved_plan.json"
+
+    if not plan_path.exists():
+        raise RuntimeError("approved_plan.json is missing.")
+
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+
+    duration, sample_rate, channels = probe(audio)
+    cuts = load_cuts(plan, duration)
+    keep = build_keep_segments(cuts, duration)
+
+    render_audio(audio, keep, sample_rate, channels)
+
+    final_duration = sum(end - start for start, end in keep)
+    saved = duration - final_duration
+
+    report = {
+        "original_duration_sec": round(duration, 3),
+        "final_duration_sec": round(final_duration, 3),
+        "time_saved_sec": round(saved, 3),
+        "merged_cuts_count": len(cuts),
+        "sample_rate": sample_rate,
+        "channels": channels,
+        "wav_codec": "pcm_s24le",
+        "mp3_bitrate": "320k",
+        "noise_reduction_applied": False,
+        "voice_processing": "None",
+        "note": (
+            "No pitch shift, time stretch, voice conversion, "
+            "voice generation, or noise reduction was applied."
+        )
+    }
+
+    (WORK / "editing_report.json").write_text(
+        json.dumps(report, ensure_ascii=False, indent=2),
+        encoding="utf-8"
+    )
+
+    print("Rendering completed successfully.")
+    print(f"Original: {duration:.2f} seconds")
+    print(f"Final: {final_duration:.2f} seconds")
+    print(f"Saved: {saved:.2f} seconds")
+
+
+if __name__ == "__main__":
+    main()
