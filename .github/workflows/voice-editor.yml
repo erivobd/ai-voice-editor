@@ -1,0 +1,112 @@
+
+name: Voice Editor Worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: Job release tag
+        required: true
+        type: string
+      action:
+        description: analyze or render
+        required: true
+        type: choice
+        options: [analyze, render]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: voice-editor-${{ inputs.job_id }}
+  cancel-in-progress: false
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      JOB_ID: ${{ inputs.job_id }}
+      ACTION: ${{ inputs.action }}
+      WORK_DIR: /tmp/voice_job
+      WHISPER_MODEL: small
+
+    steps:
+      - name: Validate inputs
+        shell: bash
+        run: |
+          [[ "$JOB_ID" =~ ^job-[a-f0-9-]{20,40}$ ]] || { echo "Invalid job ID"; exit 1; }
+          [[ "$ACTION" == "analyze" || "$ACTION" == "render" ]] || { echo "Invalid action"; exit 1; }
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install FFmpeg and Python packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Download job inputs and plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$WORK_DIR"
+          gh release download "$JOB_ID" --repo "$GH_REPO" --dir "$WORK_DIR"
+
+      - name: Mark job running
+        run: |
+          python - <<'PY'
+          import json, os, datetime
+          p=os.path.join(os.environ["WORK_DIR"],"status.json")
+          d={"status":"running","stage":os.environ["ACTION"]+"ing","message":"Worker started","updated_at":datetime.datetime.now(datetime.timezone.utc).isoformat()}
+          open(p,"w").write(json.dumps(d))
+          PY
+          gh release upload "$JOB_ID" "$WORK_DIR/status.json" --repo "$GH_REPO" --clobber
+
+      - name: Analyze recording
+        if: inputs.action == 'analyze'
+        run: |
+          python processor/analyze.py
+          test -s "$WORK_DIR/report.json"
+          test -s "$WORK_DIR/nr_preview.wav"
+          gh release upload "$JOB_ID" "$WORK_DIR/report.json" "$WORK_DIR/nr_preview.wav" --repo "$GH_REPO" --clobber
+          python - <<'PY'
+          import json,os,datetime
+          p=os.path.join(os.environ["WORK_DIR"],"status.json")
+          open(p,"w").write(json.dumps({"status":"completed","stage":"review_ready","message":"Analysis complete. Review each suggested edit.","updated_at":datetime.datetime.now(datetime.timezone.utc).isoformat()}))
+          PY
+          gh release upload "$JOB_ID" "$WORK_DIR/status.json" --repo "$GH_REPO" --clobber
+
+      - name: Render approved edits
+        if: inputs.action == 'render'
+        run: |
+          test -s "$WORK_DIR/approved_plan.json"
+          python processor/render.py
+          test -s "$WORK_DIR/final_edited.mp3"
+          test -s "$WORK_DIR/final_edited.wav"
+          gh release upload "$JOB_ID" "$WORK_DIR/final_edited.mp3" "$WORK_DIR/final_edited.wav" "$WORK_DIR/editing_report.json" --repo "$GH_REPO" --clobber
+          python - <<'PY'
+          import json,os,datetime
+          p=os.path.join(os.environ["WORK_DIR"],"status.json")
+          open(p,"w").write(json.dumps({"status":"completed","stage":"completed","message":"Rendering complete. Files are ready to download.","updated_at":datetime.datetime.now(datetime.timezone.utc).isoformat()}))
+          PY
+          gh release upload "$JOB_ID" "$WORK_DIR/status.json" --repo "$GH_REPO" --clobber
+
+      - name: Publish failure status
+        if: failure()
+        run: |
+          mkdir -p "$WORK_DIR"
+          python - <<'PY'
+          import json,os,datetime
+          p=os.path.join(os.environ["WORK_DIR"],"status.json")
+          open(p,"w").write(json.dumps({"status":"failed","stage":"error","message":"Processing failed. Check the GitHub Actions run log for details.","updated_at":datetime.datetime.now(datetime.timezone.utc).isoformat()}))
+          PY
+          gh release upload "$JOB_ID" "$WORK_DIR/status.json" --repo "$GH_REPO" --clobber || true
