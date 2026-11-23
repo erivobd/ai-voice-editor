@@ -3,401 +3,147 @@
 <html lang="bn">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#0b1020">
-  <meta name="description" content="AI Voice Editor - Your Voice, Perfectly Edited">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#101827">
   <title>AI Voice Editor</title>
   <link rel="stylesheet" href="/style.css">
 </head>
-
 <body>
 
-<div class="app-shell">
+<header class="top">
+  <div>
+    <h1>🎙️ AI Voice Editor</h1>
+    <p>Your Voice. Perfectly Edited.</p>
+  </div>
+  <button id="btn-lock-pin" class="ghost hidden" type="button">লক</button>
+</header>
 
-  <!-- HEADER -->
-  <header class="top">
-    <div class="brand">
-      <div class="brand-icon">♫</div>
-      <div>
-        <h1>AI Voice Editor</h1>
-        <p>Your Voice. Perfectly Edited.</p>
+<main>
+
+  <!-- LOGIN -->
+  <section id="pin-card" class="panel hidden">
+    <h2>Welcome Back!</h2>
+    <p class="muted">তোমার ব্যক্তিগত Voice Editing Dashboard-এ প্রবেশ করতে পাসওয়ার্ড দাও।</p>
+
+    <form id="pin-form">
+      <label for="pin-input">Access Password</label>
+      <input
+        id="pin-input"
+        type="password"
+        placeholder="পাসওয়ার্ড লিখো"
+        autocomplete="current-password"
+        required
+      >
+      <p id="pin-error" class="error hidden">পাসওয়ার্ড সঠিক নয়। আবার চেষ্টা করো।</p>
+      <button id="btn-save-pin" type="submit">Unlock Dashboard</button>
+    </form>
+
+    <p class="muted">🔒 Private & Secure Workspace</p>
+    <small>Your recordings and editing files are protected.</small>
+  </section>
+
+  <!-- UPLOAD -->
+  <section id="upload-card" class="panel">
+    <h2>নতুন অডিও এডিট</h2>
+    <p class="muted">
+      তোমার অডিও এবং বাংলা স্ক্রিপ্ট আপলোড করো। AI স্বয়ংক্রিয়ভাবে বিশ্লেষণ ও এডিট করবে।
+    </p>
+
+    <form id="upload-form">
+
+      <label for="audio-input">অডিও ফাইল নির্বাচন করো</label>
+      <input
+        id="audio-input"
+        type="file"
+        accept="audio/*,.m4a"
+        required
+      >
+      <small id="audio-meta">MP3, WAV, M4A, AAC, FLAC, OGG, OPUS ইত্যাদি</small>
+
+      <label for="script-input">বাংলা স্ক্রিপ্ট (ঐচ্ছিক)</label>
+      <input
+        id="script-input"
+        type="file"
+        accept=".txt,text/plain"
+      >
+      <small id="script-meta">TXT ফাইল দিলে স্ক্রিপ্টের সঙ্গে মিলিয়ে দেখা হবে।</small>
+
+      <button id="btn-upload" type="submit">আপলোড ও এডিট শুরু করো</button>
+    </form>
+
+    <div id="upload-progress-wrap" class="hidden">
+      <div class="progress">
+        <div id="upload-bar-fill"></div>
       </div>
+      <span id="upload-percent">0%</span>
+      <span id="upload-status-text">আপলোড হচ্ছে...</span>
     </div>
 
-    <button id="btn-lock-pin" class="ghost hidden">
-      <span>🔒</span> লক
+    <button id="btn-history-toggle" class="ghost" type="button">
+      আগের কাজগুলো দেখো
     </button>
-  </header>
-
-
-  <main>
-
-    <!-- LOGIN SCREEN -->
-    <section id="pin-card" class="panel login-card hidden">
-
-      <div class="login-icon">🔐</div>
-
-      <p class="eyebrow">PRIVATE WORKSPACE</p>
-
-      <h2>Welcome Back!</h2>
-
-      <p class="muted">
-        তোমার ব্যক্তিগত Voice Editing Dashboard-এ
-        প্রবেশ করতে পাসওয়ার্ড দাও।
-      </p>
-
-      <form id="pin-form">
-
-        <label for="pin-input">Access Password</label>
-
-        <input
-          id="pin-input"
-          type="password"
-          placeholder="Enter your password"
-          autocomplete="current-password"
-          required
-        >
-
-        <p id="pin-error" class="error hidden">
-          পাসওয়ার্ড সঠিক নয়। আবার চেষ্টা করো।
-        </p>
-
-        <button id="btn-save-pin" type="submit">
-          Unlock Dashboard →
-        </button>
-
-      </form>
-
-      <div class="security-note">
-        <span>🛡️</span>
-        <div>
-          <strong>Private & Secure Workspace</strong>
-          <small>Your recordings and editing files are protected.</small>
-        </div>
-      </div>
-
-      <p class="login-footer">
-        Protected Access • AI Voice Editor
-      </p>
-
-    </section>
-
-
-    <!-- UPLOAD DASHBOARD -->
-    <section id="upload-card" class="panel">
-
-      <div class="section-heading">
-        <div>
-          <p class="eyebrow">WORKSPACE</p>
-          <h2>নতুন অডিও এডিট করো</h2>
-          <p class="muted">
-            তোমার অডিও আপলোড করো, AI বিশ্লেষণ শুরু করবে।
-          </p>
-        </div>
-        <div class="heading-icon">🎙️</div>
-      </div>
-
-      <form id="upload-form">
-
-        <label class="upload-label">
-          <span>অডিও ফাইল</span>
-
-          <input
-            id="audio-input"
-            type="file"
-            accept=".mp3,.wav,.m4a,.aac,.flac"
-            required
-          >
-        </label>
-
-        <small id="audio-meta">
-          MP3, WAV, M4A, AAC বা FLAC (সর্বোচ্চ ১৫০ MB)
-        </small>
-
-        <label class="upload-label">
-          <span>বাংলা স্ক্রিপ্ট (ঐচ্ছিক)</span>
-
-          <input
-            id="script-input"
-            type="file"
-            accept=".txt"
-          >
-        </label>
-
-        <small id="script-meta">
-          TXT ফাইল দিলে স্ক্রিপ্টের সঙ্গে মিলিয়ে দেখা হবে।
-        </small>
-
-        <button id="btn-upload" type="submit">
-          <span>↑</span> আপলোড ও বিশ্লেষণ শুরু
-        </button>
-
-      </form>
-
-      <!-- UPLOAD PROGRESS -->
-      <div id="upload-progress-wrap" class="progress-section hidden">
-
-        <div class="progress-heading">
-          <strong>Uploading Audio</strong>
-          <span id="upload-percent">0%</span>
-        </div>
-
-        <div class="progress">
-          <div id="upload-bar-fill"></div>
-        </div>
-
-        <span id="upload-status-text" class="muted"></span>
-
-      </div>
-
-      <button id="btn-history-toggle" class="ghost full-width">
-        ◷ আগের কাজগুলো দেখো
-      </button>
-
-    </section>
-
-
-    <!-- JOB HISTORY -->
-    <section id="history-card" class="panel hidden">
-
-      <div class="section-head">
-        <div>
-          <p class="eyebrow">YOUR ACTIVITY</p>
-          <h2>আগের কাজ</h2>
-        </div>
-
-        <button id="btn-close-history" class="ghost">
-          বন্ধ
-        </button>
-      </div>
-
-      <div id="history-list"></div>
-
-    </section>
-
-
-    <!-- PROCESSING STATUS -->
-    <section id="status-card" class="panel hidden">
-
-      <div class="processing-top">
-        <div class="spinner" id="status-spinner"></div>
-
-        <div>
-          <p class="eyebrow">PROCESSING</p>
-          <h2 id="status-title">অডিও প্রসেসিং চলছে</h2>
-          <p id="status-message" class="muted">
-            তোমার অডিও বিশ্লেষণ করা হচ্ছে...
-          </p>
-        </div>
-      </div>
-
-      <!-- PERCENTAGE -->
-      <div class="percentage-card">
-
-        <div class="percentage-heading">
-          <span>কাজের অগ্রগতি</span>
-          <strong id="status-percent">0%</strong>
-        </div>
-
-        <div class="progress main-progress">
-          <div id="status-progress-fill"></div>
-        </div>
-
-        <p class="muted" id="status-stage-text">
-          কাজ শুরু হওয়ার অপেক্ষায়...
-        </p>
-
-      </div>
-
-      <div class="processing-steps">
-
-        <div class="processing-step" id="step-upload">
-          <span class="step-icon">01</span>
-          <div>
-            <strong>অডিও আপলোড</strong>
-            <small>রেকর্ডিং প্রস্তুত করা</small>
-          </div>
-          <span class="step-status">◯</span>
-        </div>
-
-        <div class="processing-step" id="step-analysis">
-          <span class="step-icon">02</span>
-          <div>
-            <strong>ভয়েস বিশ্লেষণ</strong>
-            <small>কথা ও স্ক্রিপ্ট মিলিয়ে দেখা</small>
-          </div>
-          <span class="step-status">◯</span>
-        </div>
-
-        <div class="processing-step" id="step-editing">
-          <span class="step-icon">03</span>
-          <div>
-            <strong>অডিও এডিটিং</strong>
-            <small>অপ্রয়োজনীয় অংশ শনাক্ত করা</small>
-          </div>
-          <span class="step-status">◯</span>
-        </div>
-
-        <div class="processing-step" id="step-render">
-          <span class="step-icon">04</span>
-          <div>
-            <strong>ফাইনাল অডিও তৈরি</strong>
-            <small>MP3 ও WAV প্রস্তুত করা</small>
-          </div>
-          <span class="step-status">◯</span>
-        </div>
-
-      </div>
-
-      <p id="status-job-id" class="muted job-id"></p>
-
-      <div id="status-actions" class="hidden">
-        <button id="btn-retry-status" class="ghost">
-          আবার চেষ্টা
-        </button>
-
-        <button id="btn-status-new-job" class="ghost">
-          নতুন কাজ
-        </button>
-      </div>
-
-    </section>
-
-
-    <!-- REVIEW -->
-    <section id="review-card" class="panel hidden">
-
-      <div class="section-heading">
-        <div>
-          <p class="eyebrow">EDITING REVIEW</p>
-          <h2>রিভিউ ও কাট অনুমোদন</h2>
-        </div>
-        <div class="heading-icon">✂️</div>
-      </div>
-
-      <p id="review-summary-text" class="muted"></p>
-
-      <div id="missing-lines-box" class="notice hidden">
-        <strong>স্ক্রিপ্টের যেসব লাইন মেলেনি</strong>
-        <ul id="missing-lines-list"></ul>
-        <small>এগুলো শুধু সতর্কতা, নিজে থেকে কাটা হবে না।</small>
-      </div>
-
-      <div class="playerbox">
-        <strong id="player-label">Original narration</strong>
-
-        <audio id="audio-player" controls preload="metadata"></audio>
-
-        <span id="player-time">00:00.0</span>
-
-        <p id="player-error" class="error hidden"></p>
-      </div>
-
-      <button id="btn-preview-nr" class="ghost">
-        ১০ সেকেন্ডের Noise Reduction Preview
-      </button>
-
-      <div class="section-head">
-        <h3>প্রস্তাবিত এডিট</h3>
-
-        <div>
-          <button id="btn-approve-all" class="ghost">
-            সব অনুমোদন
-          </button>
-
-          <button id="btn-reject-all" class="ghost">
-            সব বাতিল
-          </button>
-        </div>
-      </div>
-
-      <p class="warning">
-        প্রতিটি অংশ শুনে নিশ্চিত হও। দীর্ঘ বিরতি সবসময় ভুল নয়।
-        কোনো কাট স্বয়ংক্রিয়ভাবে অনুমোদিত নয়।
-      </p>
-
-      <div id="edits-list"></div>
-
-      <div class="panel inner">
-
-        <h3>অডিও আউটপুট</h3>
-
-        <label>
-          <input type="radio" name="nr_mode" value="original" checked>
-          Original audio (ডিফল্ট)
-        </label>
-
-        <label>
-          <input type="radio" name="nr_mode" value="gentle">
-          Gentle noise reduction
-        </label>
-
-        <p class="muted">
-          কণ্ঠের pitch, speed বা পরিচয় বদলানো হয় না।
-        </p>
-
-        <button id="btn-render-final">
-          অনুমোদিত কাট দিয়ে Render
-        </button>
-
-      </div>
-
-      <button id="btn-new-job" class="ghost full-width">
-        নতুন কাজ শুরু
-      </button>
-
-    </section>
-
-
-    <!-- DOWNLOAD -->
-    <section id="download-card" class="panel hidden">
-
-      <div class="success-icon">✓</div>
-
-      <p class="eyebrow">COMPLETED</p>
-
-      <h2>এডিট সম্পন্ন!</h2>
-
-      <p id="final-stats" class="muted"></p>
-
-      <audio id="final-player" controls></audio>
-
-      <p id="final-player-error" class="error hidden"></p>
-
-      <div class="downloads">
-
-        <a id="dl-mp3">↓ MP3 320 kbps ডাউনলোড</a>
-
-        <a id="dl-wav">↓ WAV ডাউনলোড</a>
-
-        <a id="dl-report">↗ এডিট রিপোর্ট</a>
-
-        <a id="dl-original">↗ Original অডিও</a>
-
-      </div>
-
-      <button id="btn-back-to-review" class="ghost full-width">
-        রিভিউতে ফিরে যাও
-      </button>
-
-      <button id="btn-download-new-job" class="ghost full-width">
-        নতুন কাজ
-      </button>
-
-    </section>
-
-  </main>
-
-
-  <footer>
-    <span>🎙️</span>
-    তোমার কণ্ঠই থাকবে আসল।
-    <small>AI Voice Editor • Private Workspace</small>
-  </footer>
-
-</div>
+  </section>
+
+  <!-- HISTORY -->
+  <section id="history-card" class="panel hidden">
+    <div class="section-head">
+      <h2>আগের কাজগুলো</h2>
+      <button id="btn-close-history" class="ghost" type="button">বন্ধ</button>
+    </div>
+    <div id="history-list"></div>
+  </section>
+
+  <!-- PROCESSING -->
+  <section id="status-card" class="panel hidden">
+    <div class="spinner" id="status-spinner"></div>
+
+    <h2 id="status-title">অডিও প্রসেস হচ্ছে</h2>
+    <p id="status-message">একটু অপেক্ষা করো...</p>
+    <p id="status-job-id" class="muted"></p>
+
+    <div class="progress">
+      <div id="status-progress-fill"></div>
+    </div>
+
+    <p id="status-percent">প্রসেসিং চলছে</p>
+    <p id="status-stage-text" class="muted">অডিও বিশ্লেষণ করা হচ্ছে...</p>
+
+    <div id="status-actions" class="hidden">
+      <button id="btn-retry-status" type="button">আবার চেষ্টা</button>
+      <button id="btn-status-new-job" class="ghost" type="button">নতুন কাজ</button>
+    </div>
+  </section>
+
+  <!-- DOWNLOAD -->
+  <section id="download-card" class="panel hidden">
+    <h2>এডিট সম্পন্ন ✅</h2>
+    <p id="final-stats" class="muted"></p>
+
+    <h3>এডিট করা অডিও</h3>
+    <audio id="final-player" controls preload="metadata"></audio>
+
+    <p id="final-player-error" class="error hidden"></p>
+
+    <div class="downloads">
+      <a id="dl-mp3" href="#">MP3 320 kbps ডাউনলোড</a>
+      <a id="dl-wav" href="#">WAV ডাউনলোড</a>
+      <a id="dl-report" href="#">এডিট রিপোর্ট</a>
+      <a id="dl-original" href="#">Original অডিও</a>
+    </div>
+
+    <button id="btn-download-new-job" class="ghost" type="button">
+      নতুন অডিও এডিট করো
+    </button>
+  </section>
+
+</main>
+
+<footer>
+  তোমার কণ্ঠই থাকবে আসল। AI শুধু অডিও বিশ্লেষণ ও এডিট করবে।
+  <br>
+  Protected Access • AI Voice Editor
+</footer>
 
 <script src="/app.js" defer></script>
-
 </body>
 </html>
