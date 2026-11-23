@@ -9,7 +9,7 @@ on:
         required: true
         type: string
       action:
-        description: "Action to perform"
+        description: "Processing action"
         required: true
         type: choice
         options:
@@ -33,6 +33,7 @@ jobs:
       GITHUB_REPOSITORY: ${{ github.repository }}
       WORK_DIR: /tmp/voice_job
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
     steps:
       - name: Checkout repository
@@ -60,13 +61,14 @@ jobs:
           test -f analyze.py
           test -f render.py
           test -f requirements.txt
+          test -n "$GEMINI_API_KEY"
           echo "Project files validated."
 
       - name: Prepare job directory
         run: |
           mkdir -p "$WORK_DIR"
 
-      - name: Download job assets from GitHub Release
+      - name: Download job assets
         run: |
           gh release download "$JOB_ID" \
             --repo "$GITHUB_REPOSITORY" \
@@ -87,59 +89,48 @@ jobs:
             exit 1
           fi
 
-          echo "Original audio found successfully."
+          echo "Original audio verified."
 
-      - name: Analyze recording
+      - name: Analyze recording with Gemini
         if: ${{ inputs.action == 'analyze' }}
         run: |
           python analyze.py
 
           test -f "$WORK_DIR/report.json"
+          test -f "$WORK_DIR/approved_plan.json"
 
-          echo "Analysis completed."
+          echo "Gemini analysis completed."
 
-      - name: Upload analysis results
-        if: ${{ inputs.action == 'analyze' && success() }}
-        run: |
-          FILES=()
-
-          for FILE in report.json nr_preview.wav; do
-            if [ -f "$WORK_DIR/$FILE" ]; then
-              FILES+=("$WORK_DIR/$FILE")
-            fi
-          done
-
-          if [ "${#FILES[@]}" -eq 0 ]; then
-            echo "No analysis output files found."
-            exit 1
-          fi
-
-          gh release upload "$JOB_ID" "${FILES[@]}" \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber
-
-          echo "Analysis results uploaded."
-
-      - name: Render approved edits
-        if: ${{ inputs.action == 'render' }}
+      - name: Automatically render edited audio
+        if: ${{ inputs.action == 'analyze' || inputs.action == 'render' }}
         run: |
           python render.py
 
-          echo "Rendering completed."
+          test -f "$WORK_DIR/final_edited.mp3"
+          test -f "$WORK_DIR/final_edited.wav"
 
-      - name: Upload rendered audio
-        if: ${{ inputs.action == 'render' && success() }}
+          echo "Audio rendering completed."
+
+      - name: Upload all results
+        if: ${{ success() }}
         run: |
           FILES=()
 
-          for FILE in final_edited.mp3 final_edited.wav editing_report.json status.json; do
+          for FILE in \
+            report.json \
+            approved_plan.json \
+            transcript.srt \
+            editing_report.json \
+            final_edited.mp3 \
+            final_edited.wav
+          do
             if [ -f "$WORK_DIR/$FILE" ]; then
               FILES+=("$WORK_DIR/$FILE")
             fi
           done
 
           if [ "${#FILES[@]}" -eq 0 ]; then
-            echo "No rendered output files found."
+            echo "No output files found."
             exit 1
           fi
 
@@ -147,7 +138,7 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --clobber
 
-          echo "Rendered files uploaded."
+          echo "All available results uploaded."
 
       - name: Publish failure status
         if: ${{ failure() }}
@@ -164,7 +155,7 @@ jobs:
           status = {
               "status": "error",
               "stage": "failed",
-              "message": "Processing failed. Check the GitHub Actions run log for details.",
+              "message": "Processing failed. Check GitHub Actions logs.",
               "updated_at": datetime.now(timezone.utc).isoformat()
           }
 
