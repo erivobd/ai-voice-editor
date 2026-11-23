@@ -28,6 +28,19 @@ MIN_MATCH_SCORE = 0.92
 MAX_AUTO_CUT_RATIO = 0.40
 MIN_KEEP_DURATION = 0.08
 
+# Repeated word detection
+MAX_DUPLICATE_WORD_GAP = 0.80
+
+# Common intentional Bengali repetitions.
+INTENTIONAL_REPETITIONS = {
+    "ধীরে", "আস্তে", "খুব", "একটু",
+    "বড়", "ছোট", "মাঝে", "দিনে",
+    "বারে", "এক", "বার", "ঘুরে",
+    "দেখে", "শুনে", "বলে", "হেঁটে",
+    "কাঁদতে", "হাসতে", "হাঁটতে",
+    "চলতে", "যেতে", "করতে"
+}
+
 
 # ============================================================
 # BASIC HELPERS
@@ -151,7 +164,6 @@ def to_seconds(value):
     else:
         text = str(value).strip()
 
-        # Supports timestamps such as 1.25s.
         match = re.fullmatch(
             r"([0-9]+(?:\.[0-9]+)?)\s*s?",
             text
@@ -178,9 +190,7 @@ def find_word_annotations(data):
     def walk(value):
         if isinstance(value, dict):
 
-            annotation_type = value.get("type")
-
-            if annotation_type == "word_info":
+            if value.get("type") == "word_info":
                 found.append(value)
 
             for child in value.values():
@@ -294,12 +304,14 @@ def transcribe(audio):
 
             start_value = (
                 annotation.get("start_offset")
-                or annotation.get("startOffset")
+                if annotation.get("start_offset") is not None
+                else annotation.get("startOffset")
             )
 
             end_value = (
                 annotation.get("end_offset")
-                or annotation.get("endOffset")
+                if annotation.get("end_offset") is not None
+                else annotation.get("endOffset")
             )
 
             start = to_seconds(start_value)
@@ -329,7 +341,6 @@ def transcribe(audio):
             "Automatic editing stopped to protect the original recording."
         )
 
-    # Get transcript text from the response if available.
     transcript = ""
 
     for key in ("output_text", "text"):
@@ -380,7 +391,6 @@ def validate_words(words, duration):
 
         previous_end = end
 
-    # Clip tiny timestamp overrun to the actual duration.
     for item in words:
         item["end"] = min(item["end"], duration)
 
@@ -398,7 +408,6 @@ def find_line_matches(line, words):
 
     count = len(target)
 
-    # Only search around the expected sentence length.
     minimum = max(1, int(count * 0.90))
     maximum = max(minimum, int(count * 1.10))
 
@@ -438,7 +447,6 @@ def find_line_matches(line, words):
                 "word_count": size
             })
 
-    # Highest score first.
     candidates.sort(
         key=lambda item: (
             -item["score"],
@@ -510,7 +518,6 @@ def find_duplicate_take_cuts(lines, words, duration):
 
         for item in matches[1:]:
 
-            # Ignore any overlapping candidate.
             if (
                 item["start"] < keep["end"]
                 and item["end"] > keep["start"]
@@ -557,6 +564,71 @@ def find_duplicate_take_cuts(lines, words, duration):
 
 
 # ============================================================
+# CONSECUTIVE DUPLICATE WORD DETECTION
+# ============================================================
+
+def find_duplicate_word_cuts(words, duration):
+
+    cuts = []
+    details = []
+
+    for index in range(1, len(words)):
+
+        first = words[index - 1]
+        second = words[index]
+
+        first_word = first["norm"]
+        second_word = second["norm"]
+
+        if not first_word or not second_word:
+            continue
+
+        # Exact adjacent word repetition only.
+        if first_word != second_word:
+            continue
+
+        # Preserve common intentional Bengali repetitions.
+        if first_word in INTENTIONAL_REPETITIONS:
+            continue
+
+        gap = second["start"] - first["end"]
+
+        # Reject suspicious timestamp overlaps and distant words.
+        if gap < -0.10 or gap > MAX_DUPLICATE_WORD_GAP:
+            continue
+
+        # Remove the second occurrence only.
+        start = max(
+            first["end"],
+            second["start"]
+        )
+
+        end = min(
+            duration,
+            second["end"]
+        )
+
+        if end <= start:
+            continue
+
+        cuts.append({
+            "start": start,
+            "end": end,
+            "reason": "duplicate_word"
+        })
+
+        details.append({
+            "word": second["word"],
+            "first_start": round(first["start"], 3),
+            "first_end": round(first["end"], 3),
+            "removed_start": round(start, 3),
+            "removed_end": round(end, 3)
+        })
+
+    return cuts, details
+
+
+# ============================================================
 # LONG PAUSE DETECTION
 # ============================================================
 
@@ -571,7 +643,6 @@ def find_long_pause_cuts(words, duration):
         if gap <= MAX_PAUSE:
             continue
 
-        # Preserve a total gap of MAX_PAUSE seconds.
         remove_start = left["end"] + MAX_PAUSE / 2
         remove_end = right["start"] - MAX_PAUSE / 2
 
@@ -756,6 +827,14 @@ def main():
         )
     )
 
+    # Detect consecutive repeated words.
+    duplicate_word_cuts, duplicate_word_details = (
+        find_duplicate_word_cuts(
+            words,
+            duration
+        )
+    )
+
     # Detect gaps longer than three seconds.
     pause_cuts = find_long_pause_cuts(
         words,
@@ -764,7 +843,7 @@ def main():
 
     # Combine all proposed cuts.
     all_cuts = merge_cuts(
-        duplicate_cuts + pause_cuts,
+        duplicate_cuts + duplicate_word_cuts + pause_cuts,
         duration
     )
 
@@ -782,22 +861,24 @@ def main():
         )
 
         all_cuts = merge_cuts(
-            pause_cuts,
+            duplicate_word_cuts + pause_cuts,
             duration
         )
 
         duplicate_cuts = []
 
         safety_note = (
-            "Duplicate cuts were skipped because the proposed "
-            "total cut duration exceeded the safety limit."
+            "Duplicate-line cuts were skipped because the proposed "
+            "total cut duration exceeded the safety limit. "
+            "Duplicate-word cuts and long-pause cuts were retained."
         )
 
     else:
 
         safety_note = (
-            "Only high-confidence repeated script-line candidates "
-            "and pauses longer than three seconds were considered."
+            "High-confidence repeated script-line candidates, "
+            "consecutive duplicate words and pauses longer than "
+            "three seconds were considered."
         )
 
     approved = []
@@ -820,6 +901,10 @@ def main():
 
         "automatic_duplicate_take_cuts": bool(
             duplicate_cuts
+        ),
+
+        "automatic_duplicate_word_cuts": bool(
+            duplicate_word_cuts
         ),
 
         "max_pause_seconds": MAX_PAUSE,
@@ -845,6 +930,10 @@ def main():
         "transcribed_word_count": len(words),
 
         "duplicate_take_candidates": duplicate_details,
+
+        "duplicate_word_candidates": duplicate_word_details,
+
+        "duplicate_words_removed": len(duplicate_word_details),
 
         "long_pause_candidates": len(pause_cuts),
 
@@ -892,15 +981,11 @@ def main():
     write_srt(words)
 
     log("Analysis completed successfully.")
-
     log(f"Words transcribed: {len(words)}")
-
+    log(f"Duplicate words detected: {len(duplicate_word_details)}")
     log(f"Approved cuts: {len(approved)}")
-
     log("Generated report.json")
-
     log("Generated approved_plan.json")
-
     log("Generated transcript.srt")
 
 
