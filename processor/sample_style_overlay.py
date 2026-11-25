@@ -26,7 +26,6 @@ def _load_font(path: str, size: int) -> ImageFont.FreeTypeFont:
 
 
 def create_motion_graphic_bg(out_png: str, size: Tuple[int, int] = (1280, 720)) -> str:
-    """Creates a sleek dark engineering/documentary blueprint grid background."""
     w, h = size
     img = Image.new("RGBA", (w, h), COLOR_BG_DARK)
     draw = ImageDraw.Draw(img)
@@ -49,7 +48,6 @@ def create_headline_overlay(
     accent: str = "gold",
     size: Tuple[int, int] = (1280, 720),
 ) -> str:
-    """Sample style: Bold centered top title + warm gold/red subtitle."""
     w, h = size
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
@@ -91,7 +89,6 @@ def create_callout_card_overlay(
     position: str = "bottom_left",
     size: Tuple[int, int] = (1280, 720),
 ) -> str:
-    """Sample style: Dark frosted glass card with accent left bar."""
     w, h = size
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
@@ -137,7 +134,6 @@ def create_stat_bars_overlay(
     out_png: str,
     size: Tuple[int, int] = (1280, 720),
 ) -> str:
-    """Sample style: Right-side dark data card with progressive horizontal bars."""
     w, h = size
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)

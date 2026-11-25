@@ -1,7 +1,7 @@
 import json
 import os
 import re
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set, Union
 from urllib import request as urlrequest
 from urllib.error import HTTPError, URLError
 
@@ -34,10 +34,11 @@ def _extract_json(text: str) -> Dict[str, Any]:
     return json.loads(text)
 
 
-def _build_prompt(transcript_text: str, total_duration: float) -> str:
+def _build_prompt(transcript_text: str, total_duration: float, title: str = "") -> str:
+    title_hint = f"Documentary Title: {title}\n" if title else ""
     return f"""
 You are an elite documentary video director inspired by high-retention engineering & explainer channels.
-Create a dynamic, visually varied scene plan for a {total_duration:.1f}s documentary from this transcript:
+{title_hint}Create a dynamic, visually varied scene plan for a {total_duration:.1f}s documentary from this transcript:
 
 TRANSCRIPT:
 {transcript_text}
@@ -222,7 +223,6 @@ def _enforce_variety_and_pacing(raw_scenes: List[Dict[str, Any]], total_duration
         if stype not in ("stock_footage", "motion_graphic"):
             stype = "motion_graphic" if idx % 3 == 0 else "stock_footage"
 
-        # Never allow more than 2 consecutive stock footage scenes
         if stype == "stock_footage":
             if consecutive_stock >= 2:
                 stype = "motion_graphic"
@@ -269,15 +269,14 @@ def _enforce_variety_and_pacing(raw_scenes: List[Dict[str, Any]], total_duration
         })
         cursor = end
 
-    # Fill any remaining tail duration cleanly
     if cleaned and cleaned[-1]["end"] < total_duration:
         cleaned[-1]["end"] = round(total_duration, 2)
 
     return cleaned
 
 
-def plan_scenes(transcript_text: str, total_duration: float) -> Dict[str, Any]:
-    prompt = _build_prompt(transcript_text, total_duration)
+def plan_scenes(transcript_text: str, total_duration: float, title: str = "") -> Dict[str, Any]:
+    prompt = _build_prompt(transcript_text, total_duration, title=title)
     plan: Dict[str, Any] = {}
 
     providers = [
@@ -302,3 +301,46 @@ def plan_scenes(transcript_text: str, total_duration: float) -> Dict[str, Any]:
     raw_scenes = plan.get("scenes") if isinstance(plan, dict) else []
     scenes = _enforce_variety_and_pacing(raw_scenes or [], total_duration)
     return {"scenes": scenes}
+
+
+def create_scene_plan(
+    transcript: Union[str, Dict[str, Any], List[Dict[str, Any]]],
+    duration: Optional[float] = None,
+    title: str = "",
+    *args: Any,
+    **kwargs: Any,
+) -> Dict[str, Any]:
+    """
+    Compatibility wrapper for processor/pipeline.py.
+    Accepts transcript as str, dict (with 'segments'/'text'/'duration'), or list of segments.
+    """
+    inferred_duration = duration or kwargs.get("total_duration") or kwargs.get("audio_duration")
+    doc_title = title or kwargs.get("doc_title") or ""
+
+    if isinstance(transcript, dict):
+        segments = transcript.get("segments") or []
+        if segments:
+            transcript_text = "\n".join(
+                f"[{float(s.get('start', 0)):.1f}s - {float(s.get('end', 0)):.1f}s] {str(s.get('text', '')).strip()}"
+                for s in segments
+                if str(s.get("text", "")).strip()
+            )
+            if inferred_duration is None:
+                inferred_duration = max((float(s.get("end", 0)) for s in segments), default=60.0)
+        else:
+            transcript_text = str(transcript.get("text") or transcript.get("full_text") or "")
+        if inferred_duration is None and transcript.get("duration"):
+            inferred_duration = float(transcript["duration"])
+    elif isinstance(transcript, list):
+        transcript_text = "\n".join(
+            f"[{float(s.get('start', 0)):.1f}s - {float(s.get('end', 0)):.1f}s] {str(s.get('text', '')).strip()}"
+            for s in transcript
+            if isinstance(s, dict) and str(s.get("text", "")).strip()
+        )
+        if inferred_duration is None:
+            inferred_duration = max((float(s.get("end", 0)) for s in transcript if isinstance(s, dict)), default=60.0)
+    else:
+        transcript_text = str(transcript or "")
+
+    total_duration = float(inferred_duration) if inferred_duration else 60.0
+    return plan_scenes(transcript_text, total_duration, title=doc_title)

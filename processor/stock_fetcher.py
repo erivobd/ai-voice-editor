@@ -6,7 +6,6 @@ import requests
 
 
 def _search_pexels(query: str, api_key: str, per_page: int = 8) -> List[Tuple[str, str]]:
-    """Return list of (media_id, hd_mp4_url) from Pexels."""
     url = "https://api.pexels.com/videos/search"
     headers = {"Authorization": api_key}
     params = {"query": query, "per_page": per_page, "orientation": "landscape"}
@@ -29,7 +28,6 @@ def _search_pexels(query: str, api_key: str, per_page: int = 8) -> List[Tuple[st
 
 
 def _search_pixabay(query: str, api_key: str, per_page: int = 8) -> List[Tuple[str, str]]:
-    """Return list of (media_id, mp4_url) from Pixabay."""
     url = "https://pixabay.com/api/videos/"
     params = {"key": api_key, "q": query, "per_page": per_page, "safesearch": "true"}
     try:
@@ -54,10 +52,6 @@ def fetch_trimmed_stock_clip(
     used_media_ids: Set[str],
     start_offset: float = 0.5,
 ) -> Optional[str]:
-    """
-    Searches Pexels/Pixabay for a UNIQUE clip (never in used_media_ids) and downloads
-    ONLY the needed duration via FFmpeg stream-trim. Never keeps full raw footage.
-    """
     pexels_key = os.environ.get("PEXELS_API_KEY", "").strip()
     pixabay_key = os.environ.get("PIXABAY_API_KEY", "").strip()
 

@@ -4,13 +4,22 @@ import subprocess
 import tempfile
 from typing import Any, Dict, List, Set
 
-from processor.sample_style_overlay import (
-    create_callout_card_overlay,
-    create_headline_overlay,
-    create_motion_graphic_bg,
-    create_stat_bars_overlay,
-)
-from processor.stock_fetcher import fetch_trimmed_stock_clip
+try:
+    from processor.sample_style_overlay import (
+        create_callout_card_overlay,
+        create_headline_overlay,
+        create_motion_graphic_bg,
+        create_stat_bars_overlay,
+    )
+    from processor.stock_fetcher import fetch_trimmed_stock_clip
+except ImportError:
+    from sample_style_overlay import (
+        create_callout_card_overlay,
+        create_headline_overlay,
+        create_motion_graphic_bg,
+        create_stat_bars_overlay,
+    )
+    from stock_fetcher import fetch_trimmed_stock_clip
 
 
 def _render_scene_overlay(scene: Dict[str, Any], out_png: str, is_motion_bg: bool) -> str:
