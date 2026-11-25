@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="bn">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0b1220">
+  <title>AI Documentary Video Maker</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="top">
+  <div>
+    <h1>🎬 AI Documentary Maker</h1>
+    <p>আপনার রেডি ভয়েসওভার থেকে স্বয়ংক্রিয় 1080p সিনেমাটিক ডকুমেন্টারি</p>
+  </div>
+  <button id="btn-lock-pin" class="ghost hidden">লক</button>
+</header>
+
+<main>
+  <section id="pin-card" class="panel hidden">
+    <h2>অ্যাক্সেস PIN</h2>
+    <p class="muted">অ্যাপ ব্যবহার করতে আপনার সিকিউরিটি PIN দিন।</p>
+    <input id="pin-input" type="password" inputmode="numeric" placeholder="Access PIN">
+    <p id="pin-error" class="error hidden">PIN সঠিক নয়। আবার চেষ্টা করুন।</p>
+    <button id="btn-save-pin">Unlock</button>
+  </section>
+
+  <section id="upload-card" class="panel hidden">
+    <h2>নতুন ডকুমেন্টারি তৈরি করুন</h2>
+    <p class="muted">আপনার এডিট করা রেডি ভয়েসওভার আপলোড করুন। আপনার আসল কণ্ঠ অপরিবর্তিত রেখে AI পুরো ভিডিও তৈরি করবে।</p>
+
+    <form id="upload-form">
+      <label>ডকুমেন্টারির শিরোনাম (ঐচ্ছিক)
+        <input id="title-input" type="text" maxlength="120" placeholder="যেমন: মহাবিশ্বের অজানা রহস্য">
+      </label>
+
+      <label>ভয়েসওভার অডিও ফাইল
+        <input id="audio-input" type="file" accept=".mp3,.wav,.m4a,.aac,.flac" required>
+      </label>
+      <small id="audio-meta">সমর্থিত ফরম্যাট: MP3, WAV, M4A, AAC, FLAC (সর্বোচ্চ ১৫০ MB)</small>
+
+      <div class="toggles">
+        <label class="checkbox-label"><input id="opt-subtitles" type="checkbox" checked> ভিডিওতে বাংলা/অটো সাবটাইটেল যুক্ত করুন</label>
+        <label class="checkbox-label"><input id="opt-music" type="checkbox" checked> হালকা কপিরাইট-মুক্ত ব্যাকগ্রাউন্ড মিউজিক</label>
+      </div>
+
+      <button id="btn-generate" type="submit" class="primary-btn">🎬 Generate Video</button>
+    </form>
+
+    <div id="upload-progress-wrap" class="hidden">
+      <div class="progress"><div id="upload-bar-fill"></div></div>
+      <div class="progress-meta">
+        <span id="upload-percent">0%</span>
+        <span id="upload-status-text">আপলোড হচ্ছে...</span>
+      </div>
+    </div>
+
+    <p id="upload-error" class="error hidden"></p>
+    <button id="btn-history-toggle" class="ghost">আগের ভিডিওগুলো দেখুন</button>
+  </section>
+
+  <section id="history-card" class="panel hidden">
+    <div class="section-head">
+      <h2>আগের প্রজেক্টসমূহ</h2>
+      <button id="btn-close-history" class="ghost">বন্ধ</button>
+    </div>
+    <div id="history-list"></div>
+  </section>
+
+  <section id="status-card" class="panel hidden">
+    <div class="status-head">
+      <div class="spinner" id="status-spinner"></div>
+      <div>
+        <h2 id="status-stage-title">Uploading Audio</h2>
+        <p id="status-message" class="muted">অপেক্ষা করুন...</p>
+      </div>
+      <div class="big-percent" id="status-percent">5%</div>
+    </div>
+
+    <div class="progress"><div id="job-bar-fill" style="width:5%"></div></div>
+    <p id="status-job-id" class="muted small-id"></p>
+
+    <ul id="stage-list" class="stage-list">
+      <li data-stage="uploading_audio">1. Uploading Audio</li>
+      <li data-stage="analyzing_voice">2. Analyzing Voice</li>
+      <li data-stage="generating_transcript">3. Generating Transcript</li>
+      <li data-stage="creating_scene_plan">4. Creating Scene Plan</li>
+      <li data-stage="collecting_footage">5. Collecting Footage</li>
+      <li data-stage="creating_graphics">6. Creating Graphics</li>
+      <li data-stage="editing_video">7. Editing Video</li>
+      <li data-stage="rendering_final_video">8. Rendering Final Video</li>
+      <li data-stage="completed">9. Completed</li>
+    </ul>
+
+    <div id="status-error-box" class="error-box hidden">
+      <strong>ত্রুটি ঘটেছে:</strong>
+      <pre id="status-error-text"></pre>
+    </div>
+
+    <div class="actions">
+      <button id="btn-refresh-status" class="ghost">স্ট্যাটাস রিফ্রেশ</button>
+      <button id="btn-status-new-job" class="ghost">নতুন ভিডিও বানান</button>
+    </div>
+  </section>
+
+  <section id="result-card" class="panel hidden">
+    <h2>ডকুমেন্টারি ভিডিও প্রস্তুত ✅</h2>
+    <p id="result-stats" class="muted"></p>
+
+    <div class="videobox">
+      <video id="final-video-player" controls playsinline preload="metadata"></video>
+    </div>
+
+    <div class="downloads">
+      <a id="dl-mp4" class="primary-link">⬇️ MP4 (1080p) ডাউনলোড</a>
+      <a id="dl-plan">📋 Scene Plan (JSON)</a>
+      <a id="dl-transcript">📝 Transcript (JSON)</a>
+      <a id="dl-srt">💬 Subtitles (SRT)</a>
+    </div>
+
+    <button id="btn-result-new-job" class="ghost">নতুন ডকুমেন্টারি তৈরি করুন</button>
+  </section>
+</main>
+
+<footer>আপনার আসল কণ্ঠ ১০০% অক্ষত থাকে। Gemini AI + FFmpeg স্বয়ংক্রিয় ডকুমেন্টারি ইঞ্জিন।</footer>
+<script src="/app.js" defer></script>
+</body>
+</html>
