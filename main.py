@@ -14,7 +14,7 @@ def _resolve_audio(audio_source: str, work_dir: str) -> str:
         return audio_source
     if audio_source.startswith(("http://", "https://")):
         local_audio = os.path.join(work_dir, "input_voiceover.mp3")
-        print(f"[Main] Downloading voiceover audio...")
+        print("[Main] Downloading voiceover audio...")
         with requests.get(audio_source, stream=True, timeout=60) as r:
             r.raise_for_status()
             with open(local_audio, "wb") as f:
