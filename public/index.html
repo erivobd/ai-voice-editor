@@ -3,14 +3,23 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#0b1220">
+  <meta name="theme-color" content="#070205">
   <title>AI Documentary Video Maker</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+<div class="bg-orbs" aria-hidden="true">
+  <span class="orb orb-1"></span>
+  <span class="orb orb-2"></span>
+  <span class="orb orb-3"></span>
+</div>
+
 <header class="top">
   <div>
-    <h1>🎬 AI Documentary Maker</h1>
+    <h1><span class="brand-dot"></span>AI Documentary Maker</h1>
     <p>আপনার রেডি ভয়েসওভার থেকে স্বয়ংক্রিয় 1080p সিনেমাটিক ডকুমেন্টারি</p>
   </div>
   <button id="btn-lock-pin" class="ghost hidden">লক</button>
@@ -22,7 +31,7 @@
     <p class="muted">অ্যাপ ব্যবহার করতে আপনার সিকিউরিটি PIN দিন।</p>
     <input id="pin-input" type="password" inputmode="numeric" placeholder="Access PIN">
     <p id="pin-error" class="error hidden">PIN সঠিক নয়। আবার চেষ্টা করুন।</p>
-    <button id="btn-save-pin">Unlock</button>
+    <button id="btn-save-pin" class="primary-btn">Unlock</button>
   </section>
 
   <section id="upload-card" class="panel hidden">
@@ -56,7 +65,7 @@
     </div>
 
     <p id="upload-error" class="error hidden"></p>
-    <button id="btn-history-toggle" class="ghost">আগের ভিডিওগুলো দেখুন</button>
+    <button id="btn-history-toggle" class="ghost full-width">আগের ভিডিওগুলো দেখুন</button>
   </section>
 
   <section id="history-card" class="panel hidden">
@@ -118,7 +127,7 @@
       <a id="dl-srt">💬 Subtitles (SRT)</a>
     </div>
 
-    <button id="btn-result-new-job" class="ghost">নতুন ডকুমেন্টারি তৈরি করুন</button>
+    <button id="btn-result-new-job" class="ghost full-width">নতুন ডকুমেন্টারি তৈরি করুন</button>
   </section>
 </main>
 
