@@ -3,6 +3,16 @@ name: Build Documentary Video
 on:
   workflow_dispatch:
     inputs:
+      title:
+        description: 'Documentary title from web app'
+        required: false
+        default: 'documentary'
+        type: string
+      video_title:
+        description: 'Optional documentary title'
+        required: false
+        default: 'documentary'
+        type: string
       audio_url:
         description: 'Direct URL or repo path to voiceover audio (.mp3/.wav)'
         required: false
@@ -11,11 +21,6 @@ on:
         description: 'Enable background music'
         required: false
         default: 'true'
-        type: string
-      video_title:
-        description: 'Optional documentary title'
-        required: false
-        default: 'documentary'
         type: string
       job_id:
         description: 'Optional job ID from web app'
@@ -43,7 +48,7 @@ jobs:
       PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
       AUDIO_URL: ${{ github.event.inputs.audio_url }}
       ENABLE_BG_MUSIC: ${{ github.event.inputs.bg_music || 'true' }}
-      VIDEO_TITLE: ${{ github.event.inputs.video_title || 'documentary' }}
+      VIDEO_TITLE: ${{ github.event.inputs.title || github.event.inputs.video_title || 'documentary' }}
       JOB_ID: ${{ github.event.inputs.job_id }}
       ENABLE_SUBTITLES: ${{ github.event.inputs.subtitles || 'true' }}
       WHISPER_MODEL: small
