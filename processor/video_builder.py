@@ -60,7 +60,6 @@ def _compose_scene(
     )
 
     if not is_motion_bg:
-        # Subtle slow zoom / motion on trimmed stock footage
         fc = (
             f"[0:v]scale=1344:756,crop=1280:720:(iw-1280)/2:(ih-720)/2,setsar=1[base];"
             f"{overlay_chain}"
@@ -77,7 +76,6 @@ def _compose_scene(
             final_clip,
         ]
     else:
-        # Blueprint motion graphic scene
         fc = f"[0:v]scale=1280:720,setsar=1[base];{overlay_chain}"
         cmd = [
             "ffmpeg", "-y",
@@ -95,7 +93,6 @@ def _compose_scene(
     if res.returncode != 0:
         raise RuntimeError(f"Scene {sid} render failed: {res.stderr[-400:]}")
 
-    # Immediately delete raw trimmed clip & overlay png to keep disk light
     for p in (raw_clip, ov_png):
         if os.path.exists(p):
             os.remove(p)
@@ -140,7 +137,6 @@ def build_final_video(
             stderr=subprocess.DEVNULL,
         )
 
-        # Optional background music from assets/music/*.mp3
         bg_music_file = None
         if enable_bg_music and os.path.isdir("assets/music"):
             for fn in sorted(os.listdir("assets/music")):

@@ -17,7 +17,6 @@ def _search_pexels(query: str, api_key: str, per_page: int = 8) -> List[Tuple[st
         for vid in r.json().get("videos", []):
             mid = f"pexels_{vid.get('id')}"
             files = vid.get("video_files", [])
-            # Pick ~720p-1080p mp4 for fast stream-trim
             mp4s = [f for f in files if f.get("file_type") == "video/mp4" and f.get("width", 0) >= 960]
             mp4s.sort(key=lambda x: abs(x.get("width", 1280) - 1280))
             if not mp4s:
@@ -68,7 +67,6 @@ def fetch_trimmed_stock_clip(
     if pixabay_key:
         candidates.extend(_search_pixabay(query, pixabay_key))
 
-    # Pick first unused clip
     selected: Optional[Tuple[str, str]] = None
     for mid, vurl in candidates:
         if mid not in used_media_ids:
@@ -80,13 +78,11 @@ def fetch_trimmed_stock_clip(
 
     media_id, video_url = selected
     clip_len = max(2.5, round(needed_duration + 0.25, 2))
-    # Sample-inspired desaturated cool cinematic grade + normalized 720p 30fps
     vf_filter = (
         "scale=1280:720:force_original_aspect_ratio=increase,"
         "crop=1280:720,fps=30,eq=saturation=0.72:contrast=1.06:brightness=-0.03"
     )
 
-    # 1) Direct FFmpeg HTTP stream-trim (downloads only needed seconds)
     cmd = [
         "ffmpeg", "-y",
         "-ss", str(start_offset),
@@ -103,7 +99,6 @@ def fetch_trimmed_stock_clip(
         used_media_ids.add(media_id)
         return output_path
 
-    # 2) Fallback: stream-download to temp, trim exact seconds, delete raw immediately
     raw_fd, raw_path = tempfile.mkstemp(suffix=".mp4")
     os.close(raw_fd)
     try:

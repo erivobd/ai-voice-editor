@@ -6,14 +6,13 @@ FONT_BOLD = "assets/fonts/HindSiliguri-Bold.ttf"
 FONT_SEMI = "assets/fonts/HindSiliguri-SemiBold.ttf"
 FONT_REG = "assets/fonts/HindSiliguri-Regular.ttf"
 
-# Sample documentary color palette
 COLOR_WHITE = (248, 250, 252, 255)
-COLOR_GOLD = (250, 204, 21, 255)       # #FACC15
-COLOR_RED = (239, 68, 68, 255)         # #EF4444
-COLOR_SKY = (56, 189, 248, 255)        # #38BDF8
-COLOR_GLASS = (15, 23, 42, 222)        # Dark frosted slate card
+COLOR_GOLD = (250, 204, 21, 255)
+COLOR_RED = (239, 68, 68, 255)
+COLOR_SKY = (56, 189, 248, 255)
+COLOR_GLASS = (15, 23, 42, 222)
 COLOR_BORDER = (255, 255, 255, 48)
-COLOR_BG_DARK = (11, 17, 32, 255)      # Deep blueprint navy
+COLOR_BG_DARK = (11, 17, 32, 255)
 COLOR_GRID = (30, 41, 59, 130)
 
 
@@ -32,14 +31,12 @@ def create_motion_graphic_bg(out_png: str, size: Tuple[int, int] = (1280, 720)) 
     img = Image.new("RGBA", (w, h), COLOR_BG_DARK)
     draw = ImageDraw.Draw(img)
 
-    # Subtle architectural grid lines
     step = 48
     for x in range(0, w, step):
         draw.line([(x, 0), (x, h)], fill=COLOR_GRID, width=1)
     for y in range(0, h, step):
         draw.line([(0, y), (w, y)], fill=COLOR_GRID, width=1)
 
-    # Subtle accent frame line
     draw.rectangle([28, 28, w - 28, h - 28], outline=(56, 189, 248, 55), width=2)
     img.convert("RGB").save(out_png)
     return out_png
@@ -66,7 +63,6 @@ def create_headline_overlay(
         tw = bbox[2] - bbox[0]
         x = max(40, (w - tw) // 2)
         y = 58
-        # Soft dark backdrop pill for legibility on any footage
         draw.rounded_rectangle(
             [x - 28, y - 14, x + tw + 28, y + (bbox[3] - bbox[1]) + 22],
             radius=12,
