@@ -184,7 +184,7 @@ def create_scene_plan(transcript_data):
     prompt = _build_prompt(transcript_data, doc_title)
 
     client = genai.Client(api_key=GEMINI_API_KEY)
-    models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash"]
+    models_to_try = ["gemini-3.8-flash", "gemini-2.5-flash"]
     last_err = None
     raw_plan = None
 
