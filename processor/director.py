@@ -1,372 +1,304 @@
 import json
 import os
 import re
-import time
-import urllib.error
-import urllib.request
-from pathlib import Path
-from google import genai
-from google.genai import types
-from status import update_status
-
-WORK = Path(os.environ.get("WORK_DIR", "/tmp/doc_job"))
+from typing import Any, Dict, List, Set
+from urllib import request as urlrequest
+from urllib.error import HTTPError, URLError
 
 
-def _build_prompt(transcript_data, doc_title):
-    duration = transcript_data["duration"]
-    lang = transcript_data.get("detected_language", "bn")
-    lines = []
-    for seg in transcript_data["segments"]:
-        lines.append(f"[{seg['start']:.2f}s - {seg['end']:.2f}s] {seg['text']}")
-    transcript_block = "\n".join(lines)
+OPENROUTER_MODELS = [
+    "google/gemini-2.5-flash:free",
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "deepseek/deepseek-r1:free",
+    "qwen/qwen-2.5-72b-instruct:free",
+    "mistralai/mistral-small-3.1-24b-instruct:free",
+    "google/gemma-3-27b-it:free",
+    "meta-llama/llama-3.2-3b-instruct:free",
+    "qwen/qwen-2.5-coder-32b-instruct:free",
+    "nousresearch/hermes-3-llama-3.1-405b:free",
+    "openrouter/free",
+]
 
-    return f"""You are an award-winning Cinematic Documentary Film Director and Visual Editor.
-Analyze the following timestamped voiceover transcript (language: {lang}, total duration: {duration:.2f} seconds).
-Optional documentary title: "{doc_title}"
 
-Your job is to create a complete, seamless documentary scene plan from 0.0 seconds to {duration:.2f} seconds with NO gaps and NO overlapping timestamps.
+def _extract_json(text: str) -> Dict[str, Any]:
+    text = (text or "").strip()
+    if not text:
+        raise ValueError("Empty LLM response")
+    fenced = re.search(r"```(?:json)?\s*([\s\S]*?)```", text, re.IGNORECASE)
+    if fenced:
+        text = fenced.group(1).strip()
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        text = text[start : end + 1]
+    return json.loads(text)
 
-Rules:
-1. Divide the narration into dynamic documentary scenes (typically 5 to 12 seconds each; shorter for dramatic pacing).
-2. The first scene MUST start at 0.0 and the last scene MUST end at {duration:.2f}. Every next scene's start MUST equal the previous scene's end.
-3. Choose "visual_type":
-   - Use "stock_footage" for ~75% of scenes (nature, cities, mountains, ocean, historical places, science, space, people, technology).
-   - Use "motion_graphic" for ~25% of scenes (opening title card, maps/locations, timelines, statistics/charts, scientific concepts, key quotes).
-4. For every scene, provide 3 SIMPLE, CONCRETE English stock footage search queries in "search_queries" (e.g., ["ancient river sunset aerial", "misty mountains landscape", "calm ocean waves"]). Never write poetic or non-English search queries.
-5. For every scene, ALSO provide a "graphic" object so if stock footage is unavailable, the engine can seamlessly render a documentary graphic instead of repeating footage!
-   - graphic.kind must be one of: "title_card", "map_marker", "timeline", "stat_chart", "quote_card"
-   - graphic.heading: short crisp title in the narration's language (max 45 chars)
-   - graphic.subheading: concise context (max 80 chars)
-   - graphic.items: list of 2 to 4 short strings or "Label: Number" pairs (for timeline or stat_chart)
-6. Set overall "mood" to one of: "documentary_ambient", "mystery", "science", "history", "inspiring".
-7. Set overall "color_grade" to one of: "cinematic_teal", "warm_history", "cool_science", "neutral_doc".
-8. Return ONLY valid JSON matching this exact structure:
+
+def _build_prompt(transcript_text: str, total_duration: float) -> str:
+    return f"""
+You are an elite documentary video director inspired by high-retention engineering & explainer channels.
+Create a dynamic, visually varied scene plan for a {total_duration:.1f}s documentary from this transcript:
+
+TRANSCRIPT:
+{transcript_text}
+
+CRITICAL VISUAL & PACING RULES:
+1. NEVER repeat the exact same stock search query or visual subject across scenes. Every stock query must be unique and specific in English.
+2. NEVER put more than 2 stock_footage scenes in a row. Frequently alternate with motion_graphic scenes (stat_bars, callout_card, headline_card, comparison) so the video never feels like a serial slideshow of stock clips.
+3. Keep scene durations punchy and varied (3.5s to 7.0s), covering 0.0s to {total_duration:.1f}s with zero gaps or overlaps.
+4. For overlay_headline and overlay_subtext: write short, punchy text in the SAME language as the transcript (Bengali if the transcript is Bengali, English if English). Keep headline <= 32 chars and subtext <= 44 chars.
+5. For stat_bars scenes, provide 3 to 4 concise [label, numeric_value] pairs in "stat_items".
+
+Return ONLY valid JSON with this exact schema:
 {{
-  "title": "Documentary Title",
-  "mood": "documentary_ambient",
-  "color_grade": "cinematic_teal",
   "scenes": [
     {{
       "scene_id": 1,
       "start": 0.0,
-      "end": 6.5,
-      "visual_type": "motion_graphic",
-      "visual_description": "Opening cinematic title card introducing the topic",
-      "search_queries": ["dramatic dark clouds timelapse", "earth from space sunrise", "cinematic mountain fog"],
-      "transition": "fade",
-      "graphic": {{
-        "kind": "title_card",
-        "heading": "Main Title",
-        "subheading": "Documentary Subtitle",
-        "items": []
-      }}
+      "end": 5.0,
+      "type": "stock_footage",
+      "overlay_style": "headline",
+      "accent": "gold",
+      "motion_effect": "slow_zoom_in",
+      "search_query": "aerial skyscraper dusk wide shot",
+      "overlay_headline": "৮২৮ মিটার উচ্চতা",
+      "overlay_subtext": "বিশ্বের সর্বোচ্চ স্থাপনা",
+      "stat_items": []
+    }},
+    {{
+      "scene_id": 2,
+      "start": 5.0,
+      "end": 10.5,
+      "type": "motion_graphic",
+      "overlay_style": "stat_bars",
+      "accent": "gold",
+      "motion_effect": "slow_zoom_out",
+      "search_query": "",
+      "overlay_headline": "উচ্চতার সাথে বাতাসের চাপ",
+      "overlay_subtext": "উপরে বাতাস অনেক বেশি তীব্র",
+      "stat_items": [["২০০মি", 35], ["৪০০মি", 58], ["৬০০মি", 82], ["৮০০মি", 100]]
     }}
   ]
 }}
-
-Timestamped Transcript:
-{transcript_block}
-"""
+""".strip()
 
 
-def _extract_json(text):
-    text = (text or "").strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?\s*", "", text)
-        text = re.sub(r"\s*```$", "", text)
-    return json.loads(text)
-
-
-def _call_gemini_with_retry(api_key, prompt, max_retries=3):
-    client = genai.Client(api_key=api_key)
-    models_to_try = ["gemini-3.8-flash"]
-    last_err = None
-
-    for model_name in models_to_try:
-        for attempt in range(1, max_retries + 1):
-            try:
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        temperature=0.4
-                    )
-                )
-                return _extract_json(response.text)
-            except Exception as e:
-                last_err = e
-                err_str = str(e)
-                print(
-                    f"[WARN] Gemini {model_name} attempt {attempt}/{max_retries} failed: {err_str}",
-                    flush=True
-                )
-                is_transient = any(
-                    code in err_str
-                    for code in ("503", "429", "UNAVAILABLE", "RESOURCE_EXHAUSTED", "DEADLINE_EXCEEDED", "timeout")
-                )
-                if is_transient and attempt < max_retries:
-                    wait_sec = 5 * (2 ** (attempt - 1))  # 5s, 10s
-                    print(f"[INFO] Retrying Gemini in {wait_sec}s...", flush=True)
-                    time.sleep(wait_sec)
-                    continue
-                break
-
-    raise RuntimeError(f"Gemini failed: {last_err}")
-
-
-def _get_accessible_groq_models(api_key, preferred_models):
-    """Query Groq /openai/v1/models to verify which preferred models are active for this API key."""
-    url = "https://api.groq.com/openai/v1/models"
-    req = urllib.request.Request(
-        url,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "User-Agent": "AIDocumentaryMaker/1.0"
-        },
-        method="GET"
-    )
+def _call_openrouter(prompt: str, api_key: str) -> Dict[str, Any]:
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com",
+        "X-Title": "Documentary Video Maker",
+    }
+    payload = {
+        "models": OPENROUTER_MODELS[:3],
+        "messages": [
+            {"role": "system", "content": "Return ONLY valid JSON. No markdown prose."},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.55,
+    }
+    req = urlrequest.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
     try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        available_ids = {
-            item.get("id")
-            for item in (data.get("data") or [])
-            if isinstance(item, dict) and item.get("id")
+        with urlrequest.urlopen(req, timeout=75) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+            content = body["choices"][0]["message"]["content"]
+            return _extract_json(content)
+    except (HTTPError, URLError, KeyError, IndexError, ValueError, json.JSONDecodeError):
+        pass
+
+    for model_name in OPENROUTER_MODELS[3:]:
+        single_payload = {
+            "model": model_name,
+            "messages": [
+                {"role": "system", "content": "Return ONLY valid JSON. No markdown prose."},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.55,
         }
-        matched = [m for m in preferred_models if m in available_ids]
-        if matched:
-            print(f"[INFO] Verified available Groq models for this key: {matched}", flush=True)
-            return matched
-        print(
-            f"[WARN] None of preferred models {preferred_models} found in /models list: {sorted(available_ids)}",
-            flush=True
+        req = urlrequest.Request(
+            url, data=json.dumps(single_payload).encode("utf-8"), headers=headers, method="POST"
         )
-    except Exception as e:
-        print(f"[WARN] Could not pre-fetch Groq /models list: {e}", flush=True)
-    return preferred_models
-
-
-def _call_groq_with_retry(api_key, prompt, max_retries=2):
-    url = "https://api.groq.com/openai/v1/chat/completions"
-    preferred_models = [
-        "openai/gpt-oss-120b",
-        "openai/gpt-oss-20b",
-        "qwen/qwen3.8-27b",
-    ]
-    models_to_try = _get_accessible_groq_models(api_key, preferred_models)
-    last_err = None
-
-    for model_name in models_to_try:
-        for attempt in range(1, max_retries + 1):
-            payload = {
-                "model": model_name,
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": "You are a documentary film director. Always return ONLY valid JSON."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                "temperature": 0.4,
-                "response_format": {"type": "json_object"}
-            }
-            req = urllib.request.Request(
-                url,
-                data=json.dumps(payload).encode("utf-8"),
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                    "User-Agent": "AIDocumentaryMaker/1.0"
-                },
-                method="POST"
-            )
-            try:
-                with urllib.request.urlopen(req, timeout=90) as resp:
-                    body = json.loads(resp.read().decode("utf-8"))
+        try:
+            with urlrequest.urlopen(req, timeout=75) as resp:
+                body = json.loads(resp.read().decode("utf-8"))
                 content = body["choices"][0]["message"]["content"]
-                return _extract_json(content), model_name
-            except urllib.error.HTTPError as e:
-                err_body = ""
-                try:
-                    err_body = e.read().decode("utf-8", errors="ignore")
-                except Exception:
-                    pass
-                last_err = f"Model '{model_name}' HTTP {e.code}: {err_body or e.reason}"
-                print(
-                    f"[WARN] Groq {model_name} attempt {attempt}/{max_retries} failed: {last_err}",
-                    flush=True
-                )
-                if e.code in (429, 500, 502, 503, 504) and attempt < max_retries:
-                    time.sleep(5 * attempt)
-                    continue
-                break
-            except Exception as e:
-                last_err = f"Model '{model_name}' error: {e}"
-                print(
-                    f"[WARN] Groq {model_name} attempt {attempt}/{max_retries} failed: {last_err}",
-                    flush=True
-                )
-                if attempt < max_retries:
-                    time.sleep(5 * attempt)
-                    continue
-                break
+                return _extract_json(content)
+        except Exception:
+            continue
 
+    raise RuntimeError("All OpenRouter fallback models failed")
+
+
+def _call_groq(prompt: str, api_key: str) -> Dict[str, Any]:
+    from groq import Groq
+
+    client = Groq(api_key=api_key)
+    models = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]
+    last_err = None
+    for m in models:
+        try:
+            completion = client.chat.completions.create(
+                model=m,
+                messages=[
+                    {"role": "system", "content": "Return ONLY valid JSON."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.5,
+            )
+            return _extract_json(completion.choices[0].message.content or "")
+        except Exception as e:
+            last_err = e
+            continue
     raise RuntimeError(f"Groq failed: {last_err}")
 
 
-def _validate_and_repair_plan(plan, duration, doc_title):
-    valid_moods = {"documentary_ambient", "mystery", "science", "history", "inspiring"}
-    valid_grades = {"cinematic_teal", "warm_history", "cool_science", "neutral_doc"}
-    valid_kinds = {"title_card", "map_marker", "timeline", "stat_chart", "quote_card"}
+def _call_gemini(prompt: str, api_key: str) -> Dict[str, Any]:
+    from google import genai
 
-    mood = plan.get("mood", "documentary_ambient")
-    if mood not in valid_moods:
-        mood = "documentary_ambient"
+    client = genai.Client(api_key=api_key)
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=prompt,
+    )
+    return _extract_json(response.text or "")
 
-    grade = plan.get("color_grade", "cinematic_teal")
-    if grade not in valid_grades:
-        grade = "cinematic_teal"
 
-    raw_scenes = plan.get("scenes") or []
-    repaired = []
+def _enforce_variety_and_pacing(raw_scenes: List[Dict[str, Any]], total_duration: float) -> List[Dict[str, Any]]:
+    total_duration = max(total_duration, 8.0)
+    motions = ["slow_zoom_in", "pan_left", "slow_zoom_out", "pan_right", "ken_burns_up"]
+    overlay_styles = ["headline", "callout_card", "stat_bars"]
+    fallback_queries = [
+        "architectural blueprint engineering table",
+        "aerial city skyline twilight drone",
+        "wind turbine airflow motion",
+        "steel construction structure closeup",
+        "modern glass tower reflection",
+        "desert sunrise wide horizon",
+        "structural engineer reviewing plans",
+        "city traffic night timelapse",
+        "bridge cables architecture perspective",
+        "laboratory scientific data screen",
+    ]
+
+    if not raw_scenes:
+        step = 5.0
+        count = max(1, int(total_duration // step))
+        raw_scenes = [
+            {
+                "scene_id": i + 1,
+                "start": round(i * step, 2),
+                "end": round(min((i + 1) * step, total_duration), 2),
+                "type": "motion_graphic" if i % 3 == 1 else "stock_footage",
+                "overlay_style": overlay_styles[i % len(overlay_styles)],
+                "accent": "red" if i % 4 == 3 else "gold",
+                "motion_effect": motions[i % len(motions)],
+                "search_query": fallback_queries[i % len(fallback_queries)],
+                "overlay_headline": f"অধ্যায় {i + 1}",
+                "overlay_subtext": "",
+                "stat_items": [],
+            }
+            for i in range(count)
+        ]
+
+    seen_queries: Set[str] = set()
+    consecutive_stock = 0
+    cleaned: List[Dict[str, Any]] = []
     cursor = 0.0
 
-    for sc in raw_scenes:
-        if cursor >= duration - 0.2:
+    for idx, sc in enumerate(raw_scenes):
+        if cursor >= total_duration - 0.25:
             break
-        try:
-            end_t = float(sc.get("end", cursor + 6.0))
-        except Exception:
-            end_t = cursor + 6.0
+        orig_start = float(sc.get("start", cursor))
+        orig_end = float(sc.get("end", orig_start + 5.0))
+        dur = max(3.5, min(7.5, orig_end - orig_start if orig_end > orig_start else 5.0))
+        start = round(cursor, 2)
+        end = round(min(total_duration, start + dur), 2)
+        if end <= start:
+            end = round(total_duration, 2)
 
-        if end_t <= cursor + 1.5:
-            end_t = min(duration, cursor + 5.0)
-        if end_t > duration:
-            end_t = duration
+        stype = sc.get("type", "stock_footage")
+        if stype not in ("stock_footage", "motion_graphic"):
+            stype = "motion_graphic" if idx % 3 == 0 else "stock_footage"
 
-        vtype = sc.get("visual_type", "stock_footage")
-        if vtype not in ("stock_footage", "motion_graphic"):
-            vtype = "stock_footage"
+        # Never allow more than 2 consecutive stock footage scenes
+        if stype == "stock_footage":
+            if consecutive_stock >= 2:
+                stype = "motion_graphic"
+                consecutive_stock = 0
+            else:
+                consecutive_stock += 1
+        else:
+            consecutive_stock = 0
 
-        queries = [str(q).strip() for q in (sc.get("search_queries") or []) if str(q).strip()]
-        if not queries:
-            queries = ["cinematic nature landscape aerial", "documentary dark clouds sky", "abstract light particles"]
+        query = (sc.get("search_query") or "").strip()
+        if stype == "stock_footage":
+            norm_q = query.lower()
+            if not query or norm_q in seen_queries:
+                for fq in fallback_queries:
+                    if fq.lower() not in seen_queries:
+                        query = fq
+                        break
+                else:
+                    query = f"{fallback_queries[idx % len(fallback_queries)]} cinematic view {idx + 1}"
+            seen_queries.add(query.lower())
+        else:
+            query = ""
 
-        g = sc.get("graphic") or {}
-        g_kind = g.get("kind", "title_card")
-        if g_kind not in valid_kinds:
-            g_kind = "title_card"
+        ov_style = sc.get("overlay_style") or overlay_styles[idx % len(overlay_styles)]
+        if ov_style not in ("headline", "callout_card", "stat_bars"):
+            ov_style = "callout_card" if stype == "motion_graphic" else "headline"
 
-        repaired.append({
-            "scene_id": len(repaired) + 1,
-            "start": round(cursor, 3),
-            "end": round(end_t, 3),
-            "duration": round(end_t - cursor, 3),
-            "visual_type": vtype,
-            "visual_description": str(sc.get("visual_description") or "Documentary visual scene"),
-            "search_queries": queries[:4],
-            "transition": sc.get("transition", "fade"),
-            "graphic": {
-                "kind": g_kind,
-                "heading": str(g.get("heading") or doc_title or "Documentary")[:60],
-                "subheading": str(g.get("subheading") or "")[:110],
-                "items": [str(x)[:60] for x in (g.get("items") or [])[:5]]
-            }
+        stat_items = sc.get("stat_items") or []
+        if ov_style == "stat_bars" and not stat_items:
+            ov_style = "callout_card"
+
+        cleaned.append({
+            "scene_id": len(cleaned) + 1,
+            "start": start,
+            "end": end,
+            "type": stype,
+            "overlay_style": ov_style,
+            "accent": "red" if sc.get("accent") == "red" else "gold",
+            "motion_effect": sc.get("motion_effect") or motions[idx % len(motions)],
+            "search_query": query,
+            "overlay_headline": (sc.get("overlay_headline") or "").strip()[:48],
+            "overlay_subtext": (sc.get("overlay_subtext") or "").strip()[:64],
+            "stat_items": stat_items,
         })
-        cursor = end_t
+        cursor = end
 
-    if not repaired:
-        seg_len = 8.0
-        t = 0.0
-        i = 1
-        while t < duration - 0.1:
-            nxt = min(duration, t + seg_len)
-            repaired.append({
-                "scene_id": i,
-                "start": round(t, 3),
-                "end": round(nxt, 3),
-                "duration": round(nxt - t, 3),
-                "visual_type": "motion_graphic" if i == 1 else "stock_footage",
-                "visual_description": "Cinematic documentary scene",
-                "search_queries": ["cinematic earth landscape aerial", "dramatic sky clouds", "ocean waves sunset"],
-                "transition": "fade",
-                "graphic": {
-                    "kind": "title_card",
-                    "heading": doc_title or "AI Documentary",
-                    "subheading": f"Part {i}",
-                    "items": []
-                }
-            })
-            t = nxt
-            i += 1
-    else:
-        repaired[-1]["end"] = round(duration, 3)
-        repaired[-1]["duration"] = round(repaired[-1]["end"] - repaired[-1]["start"], 3)
+    # Fill any remaining tail duration cleanly
+    if cleaned and cleaned[-1]["end"] < total_duration:
+        cleaned[-1]["end"] = round(total_duration, 2)
 
-    return {
-        "title": str(plan.get("title") or doc_title or "AI Documentary")[:100],
-        "mood": mood,
-        "color_grade": grade,
-        "total_duration": round(duration, 3),
-        "scene_count": len(repaired),
-        "scenes": repaired
-    }
+    return cleaned
 
 
-def create_scene_plan(transcript_data):
-    update_status("creating_scene_plan", "AI ডকুমেন্টারি দৃশ্য ও স্টোরিবোর্ড তৈরি করছে...", percent=40)
+def plan_scenes(transcript_text: str, total_duration: float) -> Dict[str, Any]:
+    prompt = _build_prompt(transcript_text, total_duration)
+    plan: Dict[str, Any] = {}
 
-    GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
-    GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
+    providers = [
+        ("gemini", os.environ.get("GEMINI_API_KEY", "").strip(), _call_gemini),
+        ("groq", os.environ.get("GROQ_API_KEY", "").strip(), _call_groq),
+        ("openrouter", os.environ.get("OPENROUTER_API_KEY", "").strip(), _call_openrouter),
+    ]
 
-    if not GEMINI_API_KEY and not GROQ_API_KEY:
-        raise RuntimeError(
-            "GEMINI_API_KEY বা GROQ_API_KEY কোনোটিই পাওয়া যায়নি। GitHub Repository Secrets-এ অন্তত একটি API Key সেট করুন।"
-        )
-
-    doc_title = os.environ.get("DOC_TITLE", "").strip()
-    prompt = _build_prompt(transcript_data, doc_title)
-
-    raw_plan = None
-    provider_used = None
-    errors = []
-
-    if GEMINI_API_KEY:
+    for name, api_key, fn in providers:
+        if not api_key:
+            continue
         try:
-            raw_plan = _call_gemini_with_retry(GEMINI_API_KEY, prompt, max_retries=3)
-            provider_used = "Gemini (gemini-3.8-flash)"
+            print(f"[Director] Trying provider: {name}")
+            plan = fn(prompt, api_key)
+            if isinstance(plan, dict) and isinstance(plan.get("scenes"), list) and plan["scenes"]:
+                print(f"[Director] Scene plan generated via {name} ({len(plan['scenes'])} scenes)")
+                break
         except Exception as e:
-            errors.append(str(e))
-            print(f"[WARN] Gemini exhausted all retries: {e}", flush=True)
+            print(f"[Director] {name} failed: {e}")
+            continue
 
-    if raw_plan is None and GROQ_API_KEY:
-        update_status(
-            "creating_scene_plan",
-            "Gemini সার্ভার ব্যস্ত, ব্যাকআপ Groq AI দিয়ে দৃশ্য পরিকল্পনা তৈরি হচ্ছে...",
-            percent=44
-        )
-        try:
-            raw_plan, groq_model = _call_groq_with_retry(GROQ_API_KEY, prompt, max_retries=2)
-            provider_used = f"Groq ({groq_model})"
-        except Exception as e:
-            errors.append(str(e))
-            print(f"[WARN] Groq fallback failed: {e}", flush=True)
-
-    if raw_plan is None:
-        raise RuntimeError(f"AI দৃশ্য পরিকল্পনা তৈরি করতে পারেনি: {' | '.join(errors)}")
-
-    scene_plan = _validate_and_repair_plan(raw_plan, transcript_data["duration"], doc_title)
-    out_path = WORK / "scene_plan.json"
-    out_path.write_text(json.dumps(scene_plan, ensure_ascii=False, indent=2), encoding="utf-8")
-
-    update_status(
-        "creating_scene_plan",
-        f"দৃশ্য পরিকল্পনা তৈরি সম্পন্ন ({scene_plan['scene_count']}টি সিন, মুড: {scene_plan['mood']}, ইঞ্জিন: {provider_used})।",
-        percent=48
-    )
-    return scene_plan
+    raw_scenes = plan.get("scenes") if isinstance(plan, dict) else []
+    scenes = _enforce_variety_and_pacing(raw_scenes or [], total_duration)
+    return {"scenes": scenes}
