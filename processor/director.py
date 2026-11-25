@@ -115,9 +115,47 @@ def _call_gemini_with_retry(api_key, prompt, max_retries=3):
     raise RuntimeError(f"Gemini failed: {last_err}")
 
 
+def _get_accessible_groq_models(api_key, preferred_models):
+    """Query Groq /openai/v1/models to verify which preferred models are active for this API key."""
+    url = "https://api.groq.com/openai/v1/models"
+    req = urllib.request.Request(
+        url,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "AIDocumentaryMaker/1.0"
+        },
+        method="GET"
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        available_ids = {
+            item.get("id")
+            for item in (data.get("data") or [])
+            if isinstance(item, dict) and item.get("id")
+        }
+        matched = [m for m in preferred_models if m in available_ids]
+        if matched:
+            print(f"[INFO] Verified available Groq models for this key: {matched}", flush=True)
+            return matched
+        print(
+            f"[WARN] None of preferred models {preferred_models} found in /models list: {sorted(available_ids)}",
+            flush=True
+        )
+    except Exception as e:
+        print(f"[WARN] Could not pre-fetch Groq /models list: {e}", flush=True)
+    return preferred_models
+
+
 def _call_groq_with_retry(api_key, prompt, max_retries=2):
     url = "https://api.groq.com/openai/v1/chat/completions"
-    models_to_try = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]
+    preferred_models = [
+        "openai/gpt-oss-120b",
+        "openai/gpt-oss-20b",
+        "qwen/qwen3.8-27b",
+    ]
+    models_to_try = _get_accessible_groq_models(api_key, preferred_models)
     last_err = None
 
     for model_name in models_to_try:
@@ -151,14 +189,14 @@ def _call_groq_with_retry(api_key, prompt, max_retries=2):
                 with urllib.request.urlopen(req, timeout=90) as resp:
                     body = json.loads(resp.read().decode("utf-8"))
                 content = body["choices"][0]["message"]["content"]
-                return _extract_json(content)
+                return _extract_json(content), model_name
             except urllib.error.HTTPError as e:
                 err_body = ""
                 try:
                     err_body = e.read().decode("utf-8", errors="ignore")
                 except Exception:
                     pass
-                last_err = f"HTTP {e.code}: {err_body or e.reason}"
+                last_err = f"Model '{model_name}' HTTP {e.code}: {err_body or e.reason}"
                 print(
                     f"[WARN] Groq {model_name} attempt {attempt}/{max_retries} failed: {last_err}",
                     flush=True
@@ -168,9 +206,9 @@ def _call_groq_with_retry(api_key, prompt, max_retries=2):
                     continue
                 break
             except Exception as e:
-                last_err = e
+                last_err = f"Model '{model_name}' error: {e}"
                 print(
-                    f"[WARN] Groq {model_name} attempt {attempt}/{max_retries} failed: {e}",
+                    f"[WARN] Groq {model_name} attempt {attempt}/{max_retries} failed: {last_err}",
                     flush=True
                 )
                 if attempt < max_retries:
@@ -301,7 +339,7 @@ def create_scene_plan(transcript_data):
     if GEMINI_API_KEY:
         try:
             raw_plan = _call_gemini_with_retry(GEMINI_API_KEY, prompt, max_retries=3)
-            provider_used = "Gemini"
+            provider_used = "Gemini (gemini-3.8-flash)"
         except Exception as e:
             errors.append(str(e))
             print(f"[WARN] Gemini exhausted all retries: {e}", flush=True)
@@ -313,8 +351,8 @@ def create_scene_plan(transcript_data):
             percent=44
         )
         try:
-            raw_plan = _call_groq_with_retry(GROQ_API_KEY, prompt, max_retries=2)
-            provider_used = "Groq"
+            raw_plan, groq_model = _call_groq_with_retry(GROQ_API_KEY, prompt, max_retries=2)
+            provider_used = f"Groq ({groq_model})"
         except Exception as e:
             errors.append(str(e))
             print(f"[WARN] Groq fallback failed: {e}", flush=True)
