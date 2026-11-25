@@ -1,536 +1,275 @@
+(() => {
+  const STAGE_ORDER = [
+    "uploading_audio",
+    "analyzing_voice",
+    "generating_transcript",
+    "creating_scene_plan",
+    "collecting_footage",
+    "creating_graphics",
+    "editing_video",
+    "rendering_final_video",
+    "completed"
+  ];
 
-'use strict';
+  const $ = (id) => document.getElementById(id);
+  let accessPin = localStorage.getItem("doc_maker_pin") || "";
+  let pinRequired = false;
+  let currentJobId = localStorage.getItem("doc_maker_active_job") || "";
+  let pollTimer = null;
 
-let currentJobId = null;
-let currentReport = null;
-let currentEditingReport = null;
-let currentAssets = [];
-let pollTimeout = null;
-
-const el = id => document.getElementById(id);
-
-function formatTime(sec) {
-  const n = Math.max(0, Number(sec) || 0);
-  const m = Math.floor(n / 60);
-  const s = (n % 60).toFixed(1).padStart(4, '0');
-  return `${String(m).padStart(2, '0')}:${s}`;
-}
-
-function formatBytes(bytes) {
-  const n = Number(bytes) || 0;
-
-  if (n < 1048576) {
-    return `${(n / 1024).toFixed(1)} KB`;
-  }
-
-  return `${(n / 1048576).toFixed(2)} MB`;
-}
-
-function assetUrl(jobId, name, download = false) {
-  return `/api/jobs/${encodeURIComponent(jobId)}/assets/${encodeURIComponent(name)}${download ? '?download=1' : ''}`;
-}
-
-function clearPollTimer() {
-  if (pollTimeout) {
-    clearTimeout(pollTimeout);
-    pollTimeout = null;
-  }
-}
-
-function schedulePoll(ms = 5000) {
-  clearPollTimer();
-  pollTimeout = setTimeout(pollJobStatus, ms);
-}
-
-function showPinPrompt(retry = false) {
-  clearPollTimer();
-
-  el('pin-card').classList.remove('hidden');
-  el('upload-card').classList.add('hidden');
-
-  el('pin-error').classList.toggle('hidden', !retry);
-  el('pin-input').focus();
-}
-
-function hidePinPrompt() {
-  el('pin-card').classList.add('hidden');
-  el('pin-error').classList.add('hidden');
-}
-
-async function apiAuth() {
-  const pin = el('pin-input').value.trim();
-
-  if (!pin) {
-    throw new Error('পাসওয়ার্ড লিখো।');
-  }
-
-  const response = await fetch('/api/auth', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ pin })
-  });
-
-  if (!response.ok) {
-    throw new Error('পাসওয়ার্ড সঠিক নয়।');
-  }
-
-  hidePinPrompt();
-  el('pin-input').value = '';
-
-  if (currentJobId) {
-    await loadJob(currentJobId);
-  } else {
-    el('upload-card').classList.remove('hidden');
-
-    if (!el('history-card').classList.contains('hidden')) {
-      await loadHistory();
-    }
-  }
-}
-
-async function init() {
-  try {
-    const response = await fetch('/api/config');
-    const config = await response.json();
-
-    if (config.pinRequired) {
-      el('btn-lock-pin').classList.remove('hidden');
-
-      const check = await fetch('/api/jobs');
-
-      if (check.status === 401) {
-        showPinPrompt(false);
-      }
-    }
-  } catch (error) {
-    console.error(error);
-  }
-
-  el('pin-form').addEventListener('submit', event => {
-    event.preventDefault();
-
-    apiAuth().catch(error => {
-      el('pin-error').textContent = error.message;
-      el('pin-error').classList.remove('hidden');
+  function showOnly(cardId) {
+    ["pin-card", "upload-card", "history-card", "status-card", "result-card"].forEach((id) => {
+      $(id).classList.toggle("hidden", id !== cardId);
     });
-  });
-
-  el('btn-lock-pin').addEventListener('click', async () => {
-    await fetch('/api/logout', { method: 'POST' });
-
-    currentJobId = null;
-    currentReport = null;
-    currentEditingReport = null;
-    currentAssets = [];
-
-    clearPollTimer();
-    showPinPrompt(false);
-  });
-
-  el('audio-input').addEventListener('change', event => {
-    const file = event.target.files[0];
-
-    el('audio-meta').textContent = file
-      ? `${file.name} (${formatBytes(file.size)})`
-      : 'MP3, WAV, M4A, AAC, FLAC ইত্যাদি';
-  });
-
-  el('script-input').addEventListener('change', event => {
-    const file = event.target.files[0];
-    const pastedText = el('script-text-input').value.trim();
-
-    if (file && pastedText) {
-      el('script-meta').textContent =
-        'পেস্ট করা স্ক্রিপ্ট ব্যবহার করা হবে। TXT ফাইলটি উপেক্ষা করা হবে।';
-    } else if (file) {
-      el('script-meta').textContent =
-        `${file.name} (${formatBytes(file.size)})`;
-    } else {
-      el('script-meta').textContent =
-        'স্ক্রিপ্ট পেস্ট অথবা TXT ফাইল, যেকোনো একটি ব্যবহার করো।';
-    }
-  });
-
-  el('script-text-input').addEventListener('input', () => {
-    const pastedText = el('script-text-input').value.trim();
-    const file = el('script-input').files[0];
-
-    if (pastedText && file) {
-      el('script-meta').textContent =
-        'পেস্ট করা স্ক্রিপ্ট ব্যবহার করা হবে। TXT ফাইলটি উপেক্ষা করা হবে।';
-    } else if (pastedText) {
-      el('script-meta').textContent =
-        `${pastedText.length.toLocaleString()} অক্ষরের স্ক্রিপ্ট প্রস্তুত।`;
-    } else if (file) {
-      el('script-meta').textContent =
-        `${file.name} (${formatBytes(file.size)})`;
-    } else {
-      el('script-meta').textContent =
-        'স্ক্রিপ্ট পেস্ট অথবা TXT ফাইল, যেকোনো একটি ব্যবহার করো।';
-    }
-  });
-
-  el('upload-form').addEventListener('submit', handleUpload);
-
-  el('btn-history-toggle').addEventListener('click', () => {
-    el('history-card').classList.remove('hidden');
-    loadHistory();
-  });
-
-  el('btn-close-history').addEventListener('click', () => {
-    el('history-card').classList.add('hidden');
-  });
-
-  el('btn-retry-status').addEventListener('click', pollJobStatus);
-
-  const reset = () => {
-    clearPollTimer();
-
-    currentJobId = null;
-    currentReport = null;
-    currentEditingReport = null;
-    currentAssets = [];
-
-    [
-      'status-card',
-      'download-card',
-      'history-card'
-    ].forEach(id => el(id).classList.add('hidden'));
-
-    el('upload-card').classList.remove('hidden');
-    el('upload-form').reset();
-
-    el('audio-meta').textContent =
-      'MP3, WAV, M4A, AAC, FLAC ইত্যাদি';
-
-    el('script-meta').textContent =
-      'স্ক্রিপ্ট পেস্ট অথবা TXT ফাইল, যেকোনো একটি ব্যবহার করো।';
-  };
-
-  el('btn-status-new-job').addEventListener('click', reset);
-  el('btn-download-new-job').addEventListener('click', reset);
-
-  el('final-player').addEventListener('error', () => {
-    el('final-player-error').textContent =
-      'অডিও Preview লোড হয়নি। নিচের Download লিংক ব্যবহার করো।';
-
-    el('final-player-error').classList.remove('hidden');
-  });
-}
-
-function handleUpload(event) {
-  event.preventDefault();
-
-  const audio = el('audio-input').files[0];
-
-  if (!audio) {
-    alert('প্রথমে অডিও ফাইল নির্বাচন করো।');
-    return;
   }
 
-  const formData = new FormData();
-
-  formData.append('audio', audio);
-
-  const pastedText = el('script-text-input').value.trim();
-  const scriptFile = el('script-input').files[0];
-
-  // Pasted text takes priority over an uploaded TXT file.
-  if (pastedText) {
-    const scriptBlob = new Blob(
-      [pastedText],
-      { type: 'text/plain;charset=utf-8' }
-    );
-
-    formData.append('script', scriptBlob, 'script.txt');
-
-  } else if (scriptFile) {
-    formData.append('script', scriptFile);
+  function authHeaders() {
+    return accessPin ? { "X-Access-Pin": accessPin } : {};
   }
 
-  const button = el('btn-upload');
+  function assetUrl(jobId, name, download = false) {
+    const params = new URLSearchParams();
+    if (accessPin) params.set("pin", accessPin);
+    if (download) params.set("download", "1");
+    return `/api/jobs/${encodeURIComponent(jobId)}/asset/${encodeURIComponent(name)}?${params.toString()}`;
+  }
 
-  button.disabled = true;
-
-  el('upload-progress-wrap').classList.remove('hidden');
-  el('upload-percent').textContent = '0%';
-  el('upload-bar-fill').style.width = '0%';
-  el('upload-status-text').textContent = 'আপলোড শুরু হচ্ছে...';
-
-  const xhr = new XMLHttpRequest();
-
-  xhr.open('POST', '/api/jobs');
-
-  xhr.upload.onprogress = event => {
-    if (!event.lengthComputable) return;
-
-    const percent = Math.min(
-      100,
-      Math.round((event.loaded / event.total) * 100)
-    );
-
-    el('upload-percent').textContent = `${percent}%`;
-    el('upload-bar-fill').style.width = `${percent}%`;
-
-    el('upload-status-text').textContent =
-      percent === 100
-        ? 'সার্ভারে পাঠানো হয়েছে...'
-        : 'আপলোড হচ্ছে...';
-  };
-
-  xhr.onload = () => {
-    button.disabled = false;
-
-    el('upload-progress-wrap').classList.add('hidden');
-
-    if (xhr.status === 401) {
-      showPinPrompt(true);
-      return;
-    }
-
-    if (xhr.status >= 200 && xhr.status < 300) {
-      try {
-        const result = JSON.parse(xhr.responseText);
-
-        if (!result.job_id) {
-          throw new Error('Job ID পাওয়া যায়নি।');
-        }
-
-        loadJob(result.job_id);
-
-      } catch (error) {
-        alert(error.message || 'সার্ভারের উত্তর বোঝা যায়নি।');
-      }
-
-      return;
-    }
-
-    let message = 'Upload failed';
-
+  async function init() {
     try {
-      message = JSON.parse(xhr.responseText).error || message;
-    } catch {}
+      const res = await fetch("/api/health");
+      const data = await res.json();
+      pinRequired = Boolean(data.pinRequired);
+    } catch (_e) {}
 
-    alert(message);
-  };
-
-  xhr.onerror = () => {
-    button.disabled = false;
-    el('upload-progress-wrap').classList.add('hidden');
-
-    alert('Network error during upload.');
-  };
-
-  xhr.send(formData);
-}
-
-async function loadJob(id) {
-  currentJobId = id;
-
-  currentReport = null;
-  currentEditingReport = null;
-  currentAssets = [];
-
-  clearPollTimer();
-
-  [
-    'upload-card',
-    'history-card',
-    'download-card'
-  ].forEach(name => el(name).classList.add('hidden'));
-
-  el('status-card').classList.remove('hidden');
-
-  el('status-spinner').classList.remove('hidden');
-  el('status-actions').classList.add('hidden');
-
-  el('status-job-id').textContent = `Job ID: ${id}`;
-
-  el('status-title').textContent = 'অডিও প্রসেস হচ্ছে';
-  el('status-message').textContent = 'একটু অপেক্ষা করো...';
-
-  await pollJobStatus();
-}
-
-async function pollJobStatus() {
-  if (!currentJobId) return;
-
-  try {
-    const response = await fetch(
-      `/api/jobs/${encodeURIComponent(currentJobId)}`
-    );
-
-    if (response.status === 401) {
-      showPinPrompt(true);
-      return;
-    }
-
-    if (!response.ok) {
-      throw new Error(`Server ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    currentAssets = data.assets || [];
-    currentReport = data.report || null;
-    currentEditingReport = data.editingReport || null;
-
-    const status = data.status || {};
-    const stage = status.stage || 'processing';
-
-    el('status-title').textContent = status.message ||
-      `Stage: ${stage.toUpperCase()}`;
-
-    el('status-message').textContent =
-      status.message || 'অডিও বিশ্লেষণ ও এডিট চলছে...';
-
-    el('status-stage-text').textContent =
-      `বর্তমান ধাপ: ${stage}`;
-
-    const hasFinalAudio = currentAssets.some(
-      asset => asset.name === 'final_edited.mp3'
-    );
-
-    if (hasFinalAudio) {
-      clearPollTimer();
-
-      el('status-spinner').classList.add('hidden');
-      el('status-card').classList.add('hidden');
-
-      openDownloadScreen();
-      return;
-    }
-
-    if (
-      status.status === 'failed' ||
-      stage === 'error' ||
-      stage === 'failed'
-    ) {
-      clearPollTimer();
-
-      el('status-spinner').classList.add('hidden');
-      el('status-actions').classList.remove('hidden');
-
-      el('status-title').textContent = 'প্রসেসিং ব্যর্থ হয়েছে';
-
-      return;
-    }
-
-    if (currentReport) {
-      el('status-percent').textContent = 'বিশ্লেষণ সম্পন্ন';
-      el('status-progress-fill').style.width = '65%';
+    if (pinRequired) {
+      if (accessPin) {
+        const ok = await verifyPin(accessPin);
+        if (ok) {
+          $("btn-lock-pin").classList.remove("hidden");
+          enterApp();
+          return;
+        }
+      }
+      showOnly("pin-card");
     } else {
-      el('status-percent').textContent = 'বিশ্লেষণ চলছে';
-      el('status-progress-fill').style.width = '25%';
+      enterApp();
     }
-
-    if (stage === 'rendering') {
-      el('status-percent').textContent = 'এডিট Render হচ্ছে';
-      el('status-progress-fill').style.width = '85%';
-    }
-
-    schedulePoll(7000);
-
-  } catch (error) {
-    el('status-title').textContent = 'Status check delayed';
-
-    el('status-message').textContent =
-      `${error.message}; আবার চেষ্টা করছি।`;
-
-    el('status-actions').classList.remove('hidden');
-
-    schedulePoll(10000);
   }
-}
 
-function originalAsset() {
-  return currentAssets.find(
-    asset => asset.name.startsWith('original_audio.')
-  )?.name || 'original_audio.m4a';
-}
-
-function openDownloadScreen() {
-  el('status-card').classList.add('hidden');
-  el('download-card').classList.remove('hidden');
-
-  el('final-player-error').classList.add('hidden');
-
-  el('final-player').src =
-    assetUrl(currentJobId, 'final_edited.mp3');
-
-  el('dl-mp3').href =
-    assetUrl(currentJobId, 'final_edited.mp3', true);
-
-  el('dl-wav').href =
-    assetUrl(currentJobId, 'final_edited.wav', true);
-
-  el('dl-report').href =
-    assetUrl(currentJobId, 'editing_report.json', true);
-
-  el('dl-original').href =
-    assetUrl(currentJobId, originalAsset(), true);
-
-  const report = currentEditingReport;
-
-  if (report) {
-    el('final-stats').textContent =
-      `Job ${currentJobId} • ${report.merged_cuts_count}টি কাট • ` +
-      `${report.time_saved_sec} সেকেন্ড কমানো • ` +
-      `Noise reduction: ${report.noise_reduction_applied} • ` +
-      'কণ্ঠের pitch ও speed অপরিবর্তিত।';
-  } else {
-    el('final-stats').textContent =
-      `Job ${currentJobId} • Download ready`;
-  }
-}
-
-async function loadHistory() {
-  const box = el('history-list');
-
-  box.textContent = 'লোড হচ্ছে...';
-
-  try {
-    const response = await fetch('/api/jobs');
-
-    if (response.status === 401) {
-      showPinPrompt(true);
-      box.textContent = 'PIN দিয়ে Unlock করো।';
-      return;
-    }
-
-    if (!response.ok) {
-      throw new Error('History load failed');
-    }
-
-    const data = await response.json();
-
-    box.replaceChildren();
-
-    if (!(data.jobs || []).length) {
-      box.textContent = 'এখনও কোনো কাজ নেই।';
-      return;
-    }
-
-    data.jobs.forEach(job => {
-      const button = document.createElement('button');
-
-      button.className = 'history-item';
-
-      button.textContent =
-        `${job.original_filename} · ${job.stage}`;
-
-      button.addEventListener('click', () => {
-        loadJob(job.job_id);
+  async function verifyPin(pin) {
+    try {
+      const res = await fetch("/api/auth/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin })
       });
-
-      box.append(button);
-    });
-
-  } catch (error) {
-    box.textContent = error.message;
+      return res.ok;
+    } catch (_e) {
+      return false;
+    }
   }
-}
 
-init();
+  function enterApp() {
+    if (currentJobId) {
+      openJob(currentJobId);
+    } else {
+      showOnly("upload-card");
+    }
+  }
+
+  $("btn-save-pin").addEventListener("click", async () => {
+    const val = $("pin-input").value.trim();
+    $("pin-error").classList.add("hidden");
+    const ok = await verifyPin(val);
+    if (!ok) {
+      $("pin-error").classList.remove("hidden");
+      return;
+    }
+    accessPin = val;
+    localStorage.setItem("doc_maker_pin", accessPin);
+    $("btn-lock-pin").classList.remove("hidden");
+    enterApp();
+  });
+
+  $("btn-lock-pin").addEventListener("click", () => {
+    stopPolling();
+    accessPin = "";
+    localStorage.removeItem("doc_maker_pin");
+    $("pin-input").value = "";
+    $("btn-lock-pin").classList.add("hidden");
+    showOnly("pin-card");
+  });
+
+  $("upload-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const file = $("audio-input").files[0];
+    if (!file) return;
+
+    $("upload-error").classList.add("hidden");
+    $("btn-generate").disabled = true;
+    $("upload-progress-wrap").classList.remove("hidden");
+    $("upload-bar-fill").style.width = "0%";
+    $("upload-percent").textContent = "0%";
+    $("upload-status-text").textContent = "অডিও আপলোড হচ্ছে...";
+
+    const formData = new FormData();
+    formData.append("audio", file);
+    formData.append("title", $("title-input").value.trim());
+    formData.append("subtitles", $("opt-subtitles").checked ? "true" : "false");
+    formData.append("bg_music", $("opt-music").checked ? "true" : "false");
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/jobs");
+    if (accessPin) xhr.setRequestHeader("X-Access-Pin", accessPin);
+
+    xhr.upload.onprogress = (ev) => {
+      if (ev.lengthComputable) {
+        const pct = Math.round((ev.loaded / ev.total) * 100);
+        $("upload-bar-fill").style.width = `${pct}%`;
+        $("upload-percent").textContent = `${pct}%`;
+      }
+    };
+
+    xhr.onload = () => {
+      $("btn-generate").disabled = false;
+      $("upload-progress-wrap").classList.add("hidden");
+      let data = {};
+      try { data = JSON.parse(xhr.responseText); } catch (_e) {}
+      if (xhr.status >= 200 && xhr.status < 300 && data.job_id) {
+        currentJobId = data.job_id;
+        localStorage.setItem("doc_maker_active_job", currentJobId);
+        openJob(currentJobId);
+      } else {
+        $("upload-error").textContent = data.error || "আপলোড ব্যর্থ হয়েছে।";
+        $("upload-error").classList.remove("hidden");
+      }
+    };
+
+    xhr.onerror = () => {
+      $("btn-generate").disabled = false;
+      $("upload-progress-wrap").classList.add("hidden");
+      $("upload-error").textContent = "নেটওয়ার্ক সমস্যা হয়েছে। আবার চেষ্টা করুন।";
+      $("upload-error").classList.remove("hidden");
+    };
+
+    xhr.send(formData);
+  });
+
+  function stopPolling() {
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  function openJob(jobId) {
+    currentJobId = jobId;
+    localStorage.setItem("doc_maker_active_job", jobId);
+    $("status-job-id").textContent = `Job ID: ${jobId}`;
+    $("status-error-box").classList.add("hidden");
+    $("status-spinner").classList.remove("hidden");
+    showOnly("status-card");
+    pollStatus();
+    stopPolling();
+    pollTimer = setInterval(pollStatus, 5000);
+  }
+
+  function updateStageChecklist(stageKey) {
+    const activeIdx = STAGE_ORDER.indexOf(stageKey);
+    document.querySelectorAll("#stage-list li").forEach((li) => {
+      const key = li.getAttribute("data-stage");
+      const idx = STAGE_ORDER.indexOf(key);
+      li.classList.remove("done", "active");
+      if (activeIdx >= 0) {
+        if (idx < activeIdx) li.classList.add("done");
+        else if (idx === activeIdx) li.classList.add("active");
+      }
+    });
+  }
+
+  async function pollStatus() {
+    if (!currentJobId) return;
+    try {
+      const res = await fetch(`/api/jobs/${encodeURIComponent(currentJobId)}/status`, {
+        headers: authHeaders()
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+
+      const pct = Number(data.percent || 0);
+      $("status-stage-title").textContent = data.stage || "Processing";
+      $("status-message").textContent = data.message || "";
+      $("status-percent").textContent = `${pct}%`;
+      $("job-bar-fill").style.width = `${pct}%`;
+      updateStageChecklist(data.stage_key);
+
+      if (data.stage_key === "completed" && data.has_video) {
+        stopPolling();
+        showResult(data);
+      } else if (data.stage_key === "failed") {
+        stopPolling();
+        $("status-spinner").classList.add("hidden");
+        $("status-error-text").textContent = data.error || "অজানা ত্রুটি ঘটেছে।";
+        $("status-error-box").classList.remove("hidden");
+      }
+    } catch (_e) {}
+  }
+
+  function showResult(data) {
+    const stats = [];
+    if (data.duration_sec) stats.push(`দৈর্ঘ্য: ${Math.round(data.duration_sec)} সেকেন্ড`);
+    if (data.scene_count) stats.push(`দৃশ্য: ${data.scene_count}টি`);
+    if (data.video_size_mb) stats.push(`সাইজ: ${data.video_size_mb} MB`);
+    $("result-stats").textContent = stats.join(" • ") || "1080p MP4 প্রস্তুত";
+
+    const videoEl = $("final-video-player");
+    videoEl.src = assetUrl(currentJobId, "final_documentary.mp4", false);
+
+    $("dl-mp4").href = assetUrl(currentJobId, "final_documentary.mp4", true);
+    $("dl-plan").href = assetUrl(currentJobId, "scene_plan.json", true);
+    $("dl-transcript").href = assetUrl(currentJobId, "transcript.json", true);
+    $("dl-srt").href = assetUrl(currentJobId, "subtitles.srt", true);
+
+    showOnly("result-card");
+  }
+
+  function startNewJob() {
+    stopPolling();
+    currentJobId = "";
+    localStorage.removeItem("doc_maker_active_job");
+    $("audio-input").value = "";
+    showOnly("upload-card");
+  }
+
+  $("btn-refresh-status").addEventListener("click", pollStatus);
+  $("btn-status-new-job").addEventListener("click", startNewJob);
+  $("btn-result-new-job").addEventListener("click", startNewJob);
+
+  $("btn-history-toggle").addEventListener("click", async () => {
+    showOnly("history-card");
+    $("history-list").innerHTML = "<p class='muted'>লোড হচ্ছে...</p>";
+    try {
+      const res = await fetch("/api/jobs", { headers: authHeaders() });
+      const data = await res.json();
+      const jobs = data.jobs || [];
+      if (!jobs.length) {
+        $("history-list").innerHTML = "<p class='muted'>এখনো কোনো ভিডিও তৈরি হয়নি।</p>";
+        return;
+      }
+      $("history-list").innerHTML = "";
+      jobs.forEach((j) => {
+        const btn = document.createElement("button");
+        btn.className = "history-item";
+        btn.innerHTML = `<span>${j.name}</span><span>${j.has_video ? "✅ Ready" : "⏳ In Progress"}</span>`;
+        btn.addEventListener("click", () => openJob(j.job_id));
+        $("history-list").appendChild(btn);
+      });
+    } catch (_e) {
+      $("history-list").innerHTML = "<p class='error'>লোড করা যায়নি।</p>";
+    }
+  });
+
+  $("btn-close-history").addEventListener("click", () => showOnly("upload-card"));
+
+  init();
+})();

@@ -1,770 +1,382 @@
-
-'use strict';
-
-const express = require('express');
-const multer = require('multer');
-const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
-const { pipeline } = require('stream/promises');
-const { Readable } = require('stream');
+const express = require("express");
+const multer = require("multer");
+const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
+const os = require("os");
 
 const app = express();
-app.disable('x-powered-by');
-app.use(express.json({ limit: '2mb' }));
-
 const PORT = Number(process.env.PORT || 3000);
-const OWNER = process.env.GITHUB_OWNER;
-const REPO = process.env.GITHUB_REPO;
-const TOKEN = process.env.GITHUB_TOKEN;
-const WORKFLOW = process.env.GITHUB_WORKFLOW_FILE || 'voice-editor.yml';
-const BRANCH = process.env.GITHUB_BRANCH || 'main';
-const ACCESS_PIN = process.env.APP_ACCESS_PIN || '';
+const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 150);
+const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
 
-const MAX_UPLOAD_BYTES = 150 * 1024 * 1024;
-const TMP_DIR = '/tmp/voice-editor-uploads';
+const GITHUB_TOKEN = (process.env.GITHUB_TOKEN || "").trim();
+const GITHUB_OWNER = (process.env.GITHUB_OWNER || "").trim();
+const GITHUB_REPO = (process.env.GITHUB_REPO || "").trim();
+const GITHUB_WORKFLOW_FILE = (process.env.GITHUB_WORKFLOW_FILE || "documentary-maker.yml").trim();
+const GITHUB_BRANCH = (process.env.GITHUB_BRANCH || "main").trim();
+const APP_ACCESS_PIN = (process.env.APP_ACCESS_PIN || "").trim();
 
-// Files are located in the repository root, not in a public folder.
-const INDEX_FILE = path.join(__dirname, 'index.html');
-const APP_JS_FILE = path.join(__dirname, 'app.js');
-const STYLE_CSS_FILE = path.join(__dirname, 'style.css');
+const ALLOWED_EXTS = new Set([".mp3", ".wav", ".m4a", ".aac", ".flac"]);
+const UPLOAD_TMP_DIR = path.join(os.tmpdir(), "doc_uploads");
+fs.mkdirSync(UPLOAD_TMP_DIR, { recursive: true });
 
-const SAFE_ASSETS = new Set([
-  'status.json',
-  'report.json',
-  'nr_preview.wav',
-  'approved_plan.json',
-  'editing_report.json',
-  'final_edited.mp3',
-  'final_edited.wav'
-]);
+app.use(express.json({ limit: "2mb" }));
+app.use(express.static(path.join(__dirname, "public")));
 
-fs.mkdirSync(TMP_DIR, { recursive: true });
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, UPLOAD_TMP_DIR),
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || "").toLowerCase();
+    cb(null, `upload_${Date.now()}_${crypto.randomBytes(4).toString("hex")}${ext}`);
+  }
+});
 
 const upload = multer({
-  dest: TMP_DIR,
-  limits: {
-    fileSize: MAX_UPLOAD_BYTES,
-    files: 2,
-    fields: 2
-  },
-  fileFilter(req, file, cb) {
-    const ext = path.extname(file.originalname || '').toLowerCase();
-
-    if (
-      file.fieldname === 'audio' &&
-      ['.mp3', '.wav', '.m4a', '.aac', '.flac'].includes(ext)
-    ) {
-      return cb(null, true);
+  storage,
+  limits: { fileSize: MAX_UPLOAD_BYTES },
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || "").toLowerCase();
+    if (!ALLOWED_EXTS.has(ext)) {
+      return cb(new Error("Unsupported audio format. Use MP3, WAV, M4A, AAC, or FLAC."));
     }
-
-    if (file.fieldname === 'script' && ext === '.txt') {
-      return cb(null, true);
-    }
-
-    cb(new Error(
-      'Unsupported file type. Audio: MP3/WAV/M4A/AAC/FLAC. Script: TXT.'
-    ));
+    cb(null, true);
   }
 });
 
-function sessionValue(exp) {
-  const payload = String(exp);
-  const sig = crypto
-    .createHmac('sha256', ACCESS_PIN)
-    .update(payload)
-    .digest('hex');
-
-  return `${payload}.${sig}`;
+function timingSafeMatch(a, b) {
+  const bufA = Buffer.from(String(a || ""), "utf8");
+  const bufB = Buffer.from(String(b || ""), "utf8");
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
 }
 
-function validSession(req) {
-  if (!ACCESS_PIN) return true;
-
-  const raw = (req.headers.cookie || '')
-    .split(';')
-    .map(x => x.trim())
-    .find(x => x.startsWith('voice_editor_session='));
-
-  if (!raw) return false;
-
-  const value = decodeURIComponent(
-    raw.slice('voice_editor_session='.length)
-  );
-
-  const [exp, sig] = value.split('.');
-
-  if (!exp || !sig || !/^\d+$/.test(exp) || Number(exp) < Date.now()) {
-    return false;
+function requirePin(req, res, next) {
+  if (!APP_ACCESS_PIN) return next();
+  const pin = req.headers["x-access-pin"] || req.query.pin || "";
+  if (!timingSafeMatch(pin, APP_ACCESS_PIN)) {
+    return res.status(401).json({ error: "Invalid or missing Access PIN." });
   }
-
-  const expected = crypto
-    .createHmac('sha256', ACCESS_PIN)
-    .update(exp)
-    .digest('hex');
-
-  const a = Buffer.from(sig);
-  const b = Buffer.from(expected);
-
-  return a.length === b.length && crypto.timingSafeEqual(a, b);
+  next();
 }
 
-function requireAuth(req, res, next) {
-  if (validSession(req)) return next();
+function ensureGithubConfig() {
+  if (!GITHUB_TOKEN || !GITHUB_OWNER || !GITHUB_REPO) {
+    throw new Error("Server missing GitHub configuration (GITHUB_TOKEN, GITHUB_OWNER, GITHUB_REPO).");
+  }
+}
 
-  return res.status(401).json({
-    error: 'Access PIN required.'
+async function ghRequest(apiPath, options = {}) {
+  ensureGithubConfig();
+  const url = apiPath.startsWith("http")
+    ? apiPath
+    : `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}${apiPath}`;
+
+  const headers = {
+    Authorization: `Bearer ${GITHUB_TOKEN}`,
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+    "User-Agent": "ai-documentary-video-maker",
+    ...(options.headers || {})
+  };
+
+  return fetch(url, { ...options, headers });
+}
+
+async function uploadReleaseAsset(release, assetName, contentType, bodyBufferOrStream, contentLength) {
+  const uploadBase = release.upload_url.replace(/\{.*$/, "");
+  const uploadUrl = `${uploadBase}?name=${encodeURIComponent(assetName)}`;
+  const headers = {
+    Authorization: `Bearer ${GITHUB_TOKEN}`,
+    Accept: "application/vnd.github+json",
+    "Content-Type": contentType,
+    "User-Agent": "ai-documentary-video-maker"
+  };
+  if (typeof contentLength === "number") {
+    headers["Content-Length"] = String(contentLength);
+  }
+  const fetchOpts = {
+    method: "POST",
+    headers,
+    body: bodyBufferOrStream
+  };
+  if (typeof bodyBufferOrStream?.pipe === "function") {
+    fetchOpts.duplex = "half";
+  }
+  const res = await fetch(uploadUrl, fetchOpts);
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`Failed uploading asset ${assetName}: ${res.status} ${txt.slice(0, 400)}`);
+  }
+  return res.json();
+}
+
+app.get("/api/health", (_req, res) => {
+  res.json({
+    ok: true,
+    pinRequired: Boolean(APP_ACCESS_PIN),
+    maxUploadMb: MAX_UPLOAD_MB
   });
-}
+});
 
-function requireConfig() {
-  if (!OWNER || !REPO || !TOKEN) {
-    throw new Error(
-      'Missing GitHub configuration. Set GITHUB_OWNER, GITHUB_REPO and GITHUB_TOKEN in Render.'
-    );
+app.post("/api/auth/verify", (req, res) => {
+  if (!APP_ACCESS_PIN) return res.json({ ok: true, pinRequired: false });
+  const pin = req.body?.pin || req.headers["x-access-pin"] || "";
+  if (!timingSafeMatch(pin, APP_ACCESS_PIN)) {
+    return res.status(401).json({ ok: false, error: "PIN সঠিক নয়।" });
   }
-}
+  res.json({ ok: true, pinRequired: true });
+});
 
-async function gh(pathname, options = {}) {
-  requireConfig();
-
-  const response = await fetch(
-    `https://api.github.com${pathname}`,
-    {
-      ...options,
-      headers: {
-        Accept: 'application/vnd.github+json',
-        Authorization: `Bearer ${TOKEN}`,
-        'X-GitHub-Api-Version': '2022-11-28',
-        ...(options.headers || {})
-      },
-      signal: AbortSignal.timeout(60000)
+app.post("/api/jobs", requirePin, upload.single("audio"), async (req, res) => {
+  const tempFile = req.file?.path;
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "অডিও ফাইল নির্বাচন করুন।" });
     }
-  );
+    ensureGithubConfig();
 
-  const bodyText = await response.text();
+    const ext = path.extname(req.file.originalname || ".mp3").toLowerCase();
+    const jobId = `doc-${Date.now()}-${crypto.randomBytes(3).toString("hex")}`;
+    const docTitle = String(req.body?.title || "").trim().slice(0, 120);
+    const subtitles = String(req.body?.subtitles || "true") === "false" ? "false" : "true";
+    const bgMusic = String(req.body?.bg_music || "true") === "false" ? "false" : "true";
 
-  let body;
-
-  try {
-    body = bodyText ? JSON.parse(bodyText) : {};
-  } catch {
-    body = { message: bodyText.slice(0, 500) };
-  }
-
-  if (!response.ok) {
-    throw new Error(
-      `GitHub API ${response.status}: ${body.message || 'request failed'}`
-    );
-  }
-
-  return body;
-}
-
-const repoPath = () => `/repos/${OWNER}/${REPO}`;
-
-async function getRelease(tag) {
-  return gh(
-    `${repoPath()}/releases/tags/${encodeURIComponent(tag)}`
-  );
-}
-
-async function createRelease(jobId, filename) {
-  return gh(`${repoPath()}/releases`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      tag_name: jobId,
-      name: jobId,
-      body: `Private voice editing job. Original file: ${filename}`,
-      draft: false,
-      prerelease: true,
-      target_commitish: BRANCH
-    })
-  });
-}
-
-async function deleteAssetIfExists(release, name) {
-  const found = (release.assets || []).find(
-    asset => asset.name === name
-  );
-
-  if (found) {
-    await gh(
-      `${repoPath()}/releases/assets/${found.id}`,
-      { method: 'DELETE' }
-    );
-  }
-}
-
-async function uploadFileAsset(release, name, filePath, contentType) {
-  const fresh = await gh(
-    `${repoPath()}/releases/${release.id}`
-  );
-
-  await deleteAssetIfExists(fresh, name);
-
-  const stat = fs.statSync(filePath);
-  const stream = fs.createReadStream(filePath);
-
-  const url =
-    `https://uploads.github.com/repos/${OWNER}/${REPO}` +
-    `/releases/${release.id}/assets?name=${encodeURIComponent(name)}`;
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${TOKEN}`,
-      Accept: 'application/vnd.github+json',
-      'Content-Type': contentType,
-      'Content-Length': String(stat.size)
-    },
-    body: stream,
-    duplex: 'half',
-    signal: AbortSignal.timeout(10 * 60 * 1000)
-  });
-
-  const txt = await response.text();
-
-  if (!response.ok) {
-    throw new Error(
-      `GitHub asset upload failed (${response.status}): ${txt.slice(0, 500)}`
-    );
-  }
-}
-
-async function uploadJson(release, name, data) {
-  const filePath = path.join(
-    TMP_DIR,
-    `${crypto.randomUUID()}.json`
-  );
-
-  fs.writeFileSync(
-    filePath,
-    JSON.stringify(data, null, 2)
-  );
-
-  try {
-    await uploadFileAsset(
-      release,
-      name,
-      filePath,
-      'application/json'
-    );
-  } finally {
-    fs.rmSync(filePath, { force: true });
-  }
-}
-
-async function dispatch(jobId, action) {
-  await gh(
-    `${repoPath()}/actions/workflows/${encodeURIComponent(WORKFLOW)}/dispatches`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+    const relRes = await ghRequest("/releases", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        ref: BRANCH,
+        tag_name: jobId,
+        target_commitish: GITHUB_BRANCH,
+        name: docTitle ? `${docTitle} (${jobId})` : jobId,
+        body: JSON.stringify({ job_id: jobId, title: docTitle, created_at: new Date().toISOString() }),
+        draft: false,
+        prerelease: false
+      })
+    });
+
+    if (!relRes.ok) {
+      const errTxt = await relRes.text();
+      throw new Error(`Could not create job release: ${relRes.status} ${errTxt.slice(0, 400)}`);
+    }
+    const release = await relRes.json();
+
+    const stat = fs.statSync(tempFile);
+    const audioStream = fs.createReadStream(tempFile);
+    await uploadReleaseAsset(
+      release,
+      `original_audio${ext}`,
+      req.file.mimetype || "application/octet-stream",
+      audioStream,
+      stat.size
+    );
+
+    const initialStatus = {
+      job_id: jobId,
+      title: docTitle,
+      stage_key: "uploading_audio",
+      stage: "Uploading Audio",
+      percent: 5,
+      message: "অডিও আপলোড সম্পন্ন হয়েছে। AI ওয়ার্কার চালু হচ্ছে...",
+      error: null,
+      updated_at: new Date().toISOString()
+    };
+    const statusBuf = Buffer.from(JSON.stringify(initialStatus, null, 2), "utf8");
+    await uploadReleaseAsset(release, "status.json", "application/json", statusBuf, statusBuf.length);
+
+    const wfRes = await ghRequest(`/actions/workflows/${encodeURIComponent(GITHUB_WORKFLOW_FILE)}/dispatches`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ref: GITHUB_BRANCH,
         inputs: {
           job_id: jobId,
-          action
+          title: docTitle,
+          subtitles,
+          bg_music: bgMusic
         }
       })
-    }
-  );
-}
-
-function validJobId(id) {
-  return /^job-[a-f0-9-]{20,40}$/i.test(String(id || ''));
-}
-
-function cleanTemp(files) {
-  for (const file of Object.values(files || {}).flat()) {
-    if (file && file.path) {
-      fs.rmSync(file.path, { force: true });
-    }
-  }
-}
-
-function safeFilename(name) {
-  return path.basename(String(name || 'audio'))
-    .replace(/[^a-zA-Z0-9._-]/g, '_')
-    .slice(0, 100) || 'audio';
-}
-
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ ok: true });
-});
-
-// Frontend configuration
-app.get('/api/config', (req, res) => {
-  res.json({
-    pinRequired: Boolean(ACCESS_PIN)
-  });
-});
-
-// Authentication
-app.post('/api/auth', (req, res) => {
-  if (!ACCESS_PIN) {
-    return res.json({ ok: true });
-  }
-
-  const supplied = String(req.body?.pin || '');
-  const a = Buffer.from(supplied);
-  const b = Buffer.from(ACCESS_PIN);
-
-  if (
-    a.length !== b.length ||
-    !crypto.timingSafeEqual(a, b)
-  ) {
-    return res.status(401).json({
-      error: 'Incorrect PIN.'
     });
+
+    if (!wfRes.ok) {
+      const errTxt = await wfRes.text();
+      throw new Error(`Workflow dispatch failed: ${wfRes.status} ${errTxt.slice(0, 400)}`);
+    }
+
+    res.status(201).json({
+      ok: true,
+      job_id: jobId,
+      status: initialStatus
+    });
+  } catch (err) {
+    console.error("Create job error:", err);
+    res.status(500).json({ error: err.message || "জব শুরু করতে সমস্যা হয়েছে।" });
+  } finally {
+    if (tempFile && fs.existsSync(tempFile)) {
+      fs.unlink(tempFile, () => {});
+    }
   }
-
-  const exp = Date.now() + 12 * 60 * 60 * 1000;
-
-  res.setHeader(
-    'Set-Cookie',
-    `voice_editor_session=${encodeURIComponent(sessionValue(exp))}; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=43200`
-  );
-
-  res.json({ ok: true });
 });
 
-app.post('/api/logout', (req, res) => {
-  res.setHeader(
-    'Set-Cookie',
-    'voice_editor_session=; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=0'
-  );
-
-  res.json({ ok: true });
-});
-
-// Protect API routes
-app.use('/api', requireAuth);
-
-// Create a new audio editing job
-app.post('/api/jobs', (req, res, next) => {
-  upload.fields([
-    { name: 'audio', maxCount: 1 },
-    { name: 'script', maxCount: 1 }
-  ])(req, res, async err => {
-    if (err) {
-      cleanTemp(req.files);
-
-      return res.status(400).json({
-        error: err.message
-      });
-    }
-
-    try {
-      const audio = req.files?.audio?.[0];
-      const script = req.files?.script?.[0];
-
-      if (!audio) {
-        cleanTemp(req.files);
-
-        return res.status(400).json({
-          error: 'Please select an audio file.'
-        });
-      }
-
-      if (script && script.size > 2 * 1024 * 1024) {
-        cleanTemp(req.files);
-
-        return res.status(400).json({
-          error: 'Script file must be under 2 MB.'
-        });
-      }
-
-      requireConfig();
-
-      const jobId = `job-${crypto.randomUUID()}`;
-
-      try {
-        const release = await createRelease(
-          jobId,
-          safeFilename(audio.originalname)
-        );
-
-        const ext = path.extname(
-          safeFilename(audio.originalname)
-        ).toLowerCase();
-
-        await uploadFileAsset(
-          release,
-          `original_audio${ext}`,
-          audio.path,
-          'application/octet-stream'
-        );
-
-        if (script) {
-          await uploadFileAsset(
-            release,
-            'script.txt',
-            script.path,
-            'text/plain; charset=utf-8'
-          );
-        }
-
-        await uploadJson(
-          release,
-          'status.json',
-          {
-            status: 'running',
-            stage: 'queued',
-            message: 'Job queued for analysis.',
-            updated_at: new Date().toISOString()
-          }
-        );
-
-        await dispatch(jobId, 'analyze');
-
-        res.status(202).json({
-          job_id: jobId
-        });
-      } finally {
-        cleanTemp(req.files);
-      }
-    } catch (e) {
-      cleanTemp(req.files);
-      next(e);
-    }
-  });
-});
-
-// List jobs
-app.get('/api/jobs', async (req, res, next) => {
+app.get("/api/jobs", requirePin, async (_req, res) => {
   try {
-    requireConfig();
-
-    const data = await gh(
-      `${repoPath()}/releases?per_page=30`
-    );
-
-    const jobs = data
-      .filter(r => r.tag_name.startsWith('job-'))
-      .map(r => ({
-        job_id: r.tag_name,
-        original_filename: r.body || r.name,
-        created_at: r.created_at,
-        stage: r.assets.some(
-          a => a.name === 'final_edited.mp3'
-        )
-          ? 'completed'
-          : r.assets.some(a => a.name === 'report.json')
-            ? 'review_ready'
-            : 'processing'
-      }));
-
+    const relRes = await ghRequest("/releases?per_page=20");
+    if (!relRes.ok) {
+      return res.status(relRes.status).json({ error: "আগের কাজগুলো লোড করা যায়নি।" });
+    }
+    const releases = await relRes.json();
+    const jobs = releases
+      .filter((r) => String(r.tag_name || "").startsWith("doc-"))
+      .map((r) => {
+        const assetNames = (r.assets || []).map((a) => a.name);
+        return {
+          job_id: r.tag_name,
+          name: r.name,
+          created_at: r.created_at,
+          has_video: assetNames.includes("final_documentary.mp4"),
+          assets: assetNames
+        };
+      });
     res.json({ jobs });
-  } catch (e) {
-    next(e);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
-// Get job status and reports
-app.get('/api/jobs/:jobId', async (req, res, next) => {
+app.get("/api/jobs/:jobId/status", requirePin, async (req, res) => {
   try {
-    const id = req.params.jobId;
-
-    if (!validJobId(id)) {
-      return res.status(400).json({
-        error: 'Invalid job ID.'
-      });
+    const { jobId } = req.params;
+    const relRes = await ghRequest(`/releases/tags/${encodeURIComponent(jobId)}`);
+    if (!relRes.ok) {
+      return res.status(404).json({ error: "জবটি খুঁজে পাওয়া যায়নি।" });
     }
+    const release = await relRes.json();
+    const assets = release.assets || [];
+    const statusAsset = assets.find((a) => a.name === "status.json");
 
-    const release = await getRelease(id);
+    let statusData = {
+      job_id: jobId,
+      stage_key: "uploading_audio",
+      stage: "Uploading Audio",
+      percent: 5,
+      message: "ওয়ার্কার শুরু হওয়ার অপেক্ষায় আছে...",
+      error: null
+    };
 
-    const byName = Object.fromEntries(
-      release.assets.map(a => [a.name, a])
-    );
-
-    async function readJson(name) {
-      const asset = byName[name];
-
-      if (!asset) return null;
-
-      const response = await fetch(asset.url, {
+    if (statusAsset) {
+      const sRes = await fetch(statusAsset.url, {
         headers: {
-          Authorization: `Bearer ${TOKEN}`,
-          Accept: 'application/octet-stream'
-        },
-        signal: AbortSignal.timeout(30000)
+          Authorization: `Bearer ${GITHUB_TOKEN}`,
+          Accept: "application/octet-stream",
+          "User-Agent": "ai-documentary-video-maker",
+          "Cache-Control": "no-cache"
+        }
       });
-
-      if (!response.ok) {
-        throw new Error(`Could not read ${name}`);
+      if (sRes.ok) {
+        try {
+          statusData = await sRes.json();
+        } catch (_e) {}
       }
-
-      return response.json();
     }
 
-    const [status, report, editingReport] =
-      await Promise.all([
-        readJson('status.json'),
-        readJson('report.json'),
-        readJson('editing_report.json')
-      ]);
+    const availableAssets = {};
+    for (const a of assets) {
+      availableAssets[a.name] = { size: a.size, updated_at: a.updated_at };
+    }
 
+    res.setHeader("Cache-Control", "no-store");
     res.json({
-      status: status || {
-        status: 'running',
-        stage: 'processing',
-        message: 'Waiting for worker.'
-      },
-      report,
-      editingReport,
-      assets: release.assets.map(a => ({
-        name: a.name,
-        size: a.size
-      }))
+      ...statusData,
+      has_video: Boolean(availableAssets["final_documentary.mp4"]),
+      assets: availableAssets
     });
-  } catch (e) {
-    next(e);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
-// Render approved edits
-app.post('/api/jobs/:jobId/render', async (req, res, next) => {
+app.get("/api/jobs/:jobId/asset/:assetName", requirePin, async (req, res) => {
   try {
-    const id = req.params.jobId;
-
-    if (!validJobId(id)) {
-      return res.status(400).json({
-        error: 'Invalid job ID.'
-      });
+    const { jobId, assetName } = req.params;
+    const allowed = new Set([
+      "final_documentary.mp4",
+      "scene_plan.json",
+      "transcript.json",
+      "subtitles.srt",
+      "status.json"
+    ]);
+    if (!allowed.has(assetName)) {
+      return res.status(400).json({ error: "Asset not allowed." });
     }
 
-    const cuts = req.body?.approved_cuts;
+    const relRes = await ghRequest(`/releases/tags/${encodeURIComponent(jobId)}`);
+    if (!relRes.ok) return res.status(404).json({ error: "Job not found." });
+    const release = await relRes.json();
+    const asset = (release.assets || []).find((a) => a.name === assetName);
+    if (!asset) return res.status(404).json({ error: "Asset not ready yet." });
 
-    const nr =
-      req.body?.noise_reduction === 'gentle'
-        ? 'gentle'
-        : 'original';
+    const redirectRes = await fetch(asset.url, {
+      method: "GET",
+      redirect: "manual",
+      headers: {
+        Authorization: `Bearer ${GITHUB_TOKEN}`,
+        Accept: "application/octet-stream",
+        "User-Agent": "ai-documentary-video-maker"
+      }
+    });
 
-    if (!Array.isArray(cuts) || cuts.length > 500) {
-      return res.status(400).json({
-        error: 'Invalid approved cut list.'
-      });
+    const downloadUrl = redirectRes.headers.get("location") || asset.url;
+    const upstreamHeaders = { "User-Agent": "ai-documentary-video-maker" };
+    if (req.headers.range) {
+      upstreamHeaders.Range = req.headers.range;
+    }
+    if (downloadUrl === asset.url) {
+      upstreamHeaders.Authorization = `Bearer ${GITHUB_TOKEN}`;
+      upstreamHeaders.Accept = "application/octet-stream";
     }
 
-    for (const cut of cuts) {
-      const start = Number(cut.start);
-      const end = Number(cut.end);
+    const fileRes = await fetch(downloadUrl, { headers: upstreamHeaders });
+    res.status(fileRes.status);
 
-      if (
-        !Number.isFinite(start) ||
-        !Number.isFinite(end) ||
-        start < 0 ||
-        end <= start
-      ) {
-        return res.status(400).json({
-          error: 'One or more approved cuts have invalid timestamps.'
-        });
-      }
+    const contentType = assetName.endsWith(".mp4")
+      ? "video/mp4"
+      : assetName.endsWith(".json")
+      ? "application/json; charset=utf-8"
+      : "text/plain; charset=utf-8";
+    res.setHeader("Content-Type", contentType);
+
+    if (fileRes.headers.get("content-length")) {
+      res.setHeader("Content-Length", fileRes.headers.get("content-length"));
+    }
+    if (fileRes.headers.get("content-range")) {
+      res.setHeader("Content-Range", fileRes.headers.get("content-range"));
+    }
+    res.setHeader("Accept-Ranges", "bytes");
+
+    if (req.query.download === "1") {
+      res.setHeader("Content-Disposition", `attachment; filename="${jobId}_${assetName}"`);
     }
 
-    const release = await getRelease(id);
-
-    if (!release.assets.some(a => a.name === 'report.json')) {
-      return res.status(409).json({
-        error: 'Analysis is not ready yet.'
-      });
-    }
-
-    if (release.assets.some(a => a.name === 'final_edited.mp3')) {
-      return res.status(409).json({
-        error: 'This job has already been rendered. Start a new job to edit again.'
-      });
-    }
-
-    await uploadJson(
-      release,
-      'approved_plan.json',
-      {
-        approved_cuts: cuts,
-        noise_reduction: nr
-      }
-    );
-
-    await uploadJson(
-      release,
-      'status.json',
-      {
-        status: 'running',
-        stage: 'rendering',
-        message: 'Rendering approved edits.',
-        updated_at: new Date().toISOString()
-      }
-    );
-
-    await dispatch(id, 'render');
-
-    res.status(202).json({ ok: true });
-  } catch (e) {
-    next(e);
-  }
-});
-
-// Stream job assets
-app.get(
-  '/api/jobs/:jobId/assets/:assetName',
-  async (req, res, next) => {
-    try {
-      const id = req.params.jobId;
-      const name = req.params.assetName;
-
-      if (
-        !validJobId(id) ||
-        (
-          !SAFE_ASSETS.has(name) &&
-          !/^original_audio\.(mp3|wav|m4a|aac|flac)$/.test(name)
-        )
-      ) {
-        return res.status(400).json({
-          error: 'Invalid asset request.'
-        });
-      }
-
-      const release = await getRelease(id);
-
-      const asset = release.assets.find(
-        a => a.name === name
-      );
-
-      if (!asset) {
-        return res.status(404).json({
-          error: 'Asset not found.'
-        });
-      }
-
-      const headers = {
-        Authorization: `Bearer ${TOKEN}`,
-        Accept: 'application/octet-stream'
-      };
-
-      const range = req.headers.range;
-
-      if (range) {
-        headers.Range = range;
-      }
-
-      const upstream = await fetch(asset.url, {
-        headers,
-        redirect: 'follow',
-        signal: AbortSignal.timeout(10 * 60 * 1000)
-      });
-
-      if (!upstream.ok && upstream.status !== 206) {
-        return res.status(upstream.status).json({
-          error: 'Could not stream asset.'
-        });
-      }
-
-      res.status(upstream.status);
-
-      res.setHeader(
-        'Content-Type',
-        name.endsWith('.wav')
-          ? 'audio/wav'
-          : name.endsWith('.mp3')
-            ? 'audio/mpeg'
-            : 'application/octet-stream'
-      );
-
-      res.setHeader('Accept-Ranges', 'bytes');
-
-      if (upstream.headers.get('content-length')) {
-        res.setHeader(
-          'Content-Length',
-          upstream.headers.get('content-length')
-        );
-      }
-
-      if (upstream.headers.get('content-range')) {
-        res.setHeader(
-          'Content-Range',
-          upstream.headers.get('content-range')
-        );
-      }
-
-      if (req.query.download === '1') {
-        res.setHeader(
-          'Content-Disposition',
-          `attachment; filename="${name}"`
-        );
-      }
-
-      if (!upstream.body) {
-        return res.end();
-      }
-
-      await pipeline(
-        Readable.fromWeb(upstream.body),
-        res
-      );
-    } catch (e) {
-      if (!res.headersSent) {
-        next(e);
-      } else {
-        res.destroy(e);
-      }
+    const { Readable } = require("stream");
+    Readable.fromWeb(fileRes.body).pipe(res);
+  } catch (err) {
+    console.error("Asset stream error:", err);
+    if (!res.headersSent) {
+      res.status(500).json({ error: "ফাইল স্ট্রিম করতে সমস্যা হয়েছে।" });
     }
   }
-);
-
-// --------------------------------------------------
-// FRONTEND FILE ROUTES
-// Files are served directly from the repository root.
-// No public/ directory is used.
-// --------------------------------------------------
-
-app.get('/', (req, res, next) => {
-  res.sendFile(INDEX_FILE, err => {
-    if (err) next(err);
-  });
 });
 
-app.get('/index.html', (req, res, next) => {
-  res.sendFile(INDEX_FILE, err => {
-    if (err) next(err);
-  });
-});
-
-app.get('/app.js', (req, res, next) => {
-  res.sendFile(APP_JS_FILE, err => {
-    if (err) next(err);
-  });
-});
-
-app.get('/style.css', (req, res, next) => {
-  res.sendFile(STYLE_CSS_FILE, err => {
-    if (err) next(err);
-  });
-});
-
-// Do not expose the entire repository using express.static.
-
-// Error handler
-app.use((err, req, res, next) => {
-  console.error(err);
-
-  if (res.headersSent) {
-    return next(err);
+app.use((err, _req, res, _next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === "LIMIT_FILE_SIZE") {
+      return res.status(413).json({ error: `ফাইল সাইজ সর্বোচ্চ ${MAX_UPLOAD_MB} MB হতে হবে।` });
+    }
+    return res.status(400).json({ error: err.message });
   }
-
-  res.status(500).json({
-    error: err.message || 'Internal server error.'
-  });
+  res.status(400).json({ error: err.message || "Request error" });
 });
 
-// Start server
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`AI Voice Editor listening on ${PORT}`);
+app.listen(PORT, () => {
+  console.log(`AI Documentary Video Maker running on port ${PORT}`);
 });

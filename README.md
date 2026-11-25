@@ -1,60 +1,28 @@
-# AI Voice Editor
+# AI Documentary Video Maker
 
-A review-first editor for spoken narration. It compares an audio recording with an optional Bengali script, suggests possible cuts, and only applies cuts that the user explicitly approves.
+নিজের রেকর্ড ও এডিট করা রেডি ভয়েসওভার আপলোড করলেই AI স্বয়ংক্রিয়ভাবে ভয়েস বুঝে, দৃশ্য পরিকল্পনা করে, বাস্তব HD স্টক ফুটেজ, Ken Burns ছবি ও মোশন গ্রাফিক্স যুক্ত করে সম্পূর্ণ **1080p সিনেমাটিক ডকুমেন্টারি ভিডিও (MP4)** তৈরি করে দেয়।
 
-## Important voice-preservation behavior
+## মূল বৈশিষ্ট্য
+- **মূল ভয়েস ১০০% অক্ষত:** কোনো পিচ, স্পিড বা টোন পরিবর্তন করা হয় না।
+- **Hybrid AI ইঞ্জিন:** `faster-whisper` দিয়ে নিখুঁত টাইমস্ট্যাম্প + **Gemini AI** দিয়ে ডকুমেন্টারি ডিরেকশন ও স্টোরিবোর্ড।
+- **৫-স্তরের মিডিয়া ও গ্রাফিক্স ইঞ্জিন (Pexels ছাড়াই চলে):**
+  1. **Pixabay HD Video** (প্রাথমিক ভিডিও সোর্স)
+  2. **Pixabay High-Res Photos** (সিনেম্যাটিক Ken Burns জুম অ্যানিমেশনসহ)
+  3. **Wikimedia Commons** (ইতিহাস, প্রকৃতি ও বিজ্ঞানের ছবি — কোনো API Key লাগে না)
+  4. **NASA Image Library** (মহাকাশ ও বিজ্ঞানের ছবি — কোনো API Key লাগে না)
+  5. **কাস্টম বাংলা মোশন গ্রাফিক্স** (`librsvg` + `Noto Sans Bengali`) — কোনো ক্লিপ কখনো রিপিট হয় না।
+- **নিরাপদ মিউজিক:** ১০০% কপিরাইট-মুক্ত ব্যাকগ্রাউন্ড অ্যাম্বিয়েন্ট মিউজিক।
+- **মোবাইল-ফ্রেন্ডলি UI:** PIN লগইন, ৯-ধাপের লাইভ প্রগ্রেস বার, এরর রিপোর্টিং, ইন-ব্রাউজার ভিডিও প্রিভিউ এবং MP4 ডাউনলোড।
 
-- No voice cloning, voice generation, pitch shifting, time stretching, or automatic speech rewriting.
-- Original audio is retained.
-- Noise reduction is optional and defaults to `original`.
-- Suggested edits are never auto-approved.
-- Review every suggested cut before rendering. A false-positive cut can remove valid narration.
+## GitHub Secrets সেটআপ (Settings → Secrets and variables → Actions)
+1. `GEMINI_API_KEY` *(ইতিমধ্যেই যুক্ত আছে)*
+2. `PIXABAY_API_KEY` *(ফ্রি অ্যাকাউন্ট থেকে নিন: pixabay.com/api/docs)*
+3. `PEXELS_API_KEY` *(সম্পূর্ণ ঐচ্ছিক — না দিলেও কোনো সমস্যা নেই)*
 
-## Architecture
-
-- Render hosts the Node/Express app.
-- A private GitHub repository stores each job as a private GitHub Release.
-- GitHub Actions runs Python, Faster-Whisper and FFmpeg.
-- The browser reviews the report and submits an approved cut plan.
-
-## GitHub setup
-
-1. Create a **private** repository.
-2. Upload all project files while preserving the folder structure.
-3. In repository Settings → Actions → General, allow GitHub Actions.
-4. Create a fine-grained Personal Access Token for this repository with:
-   - Contents: Read and write
-   - Actions: Read and write
-5. Add the token to Render as `GITHUB_TOKEN`.
-
-The workflow uses the repository's `GITHUB_TOKEN` with `contents: write` to upload release assets.
-
-## Render environment variables
-
-- `GITHUB_TOKEN`: fine-grained token described above
-- `GITHUB_OWNER`: GitHub username or organization
-- `GITHUB_REPO`: repository name
-- `GITHUB_WORKFLOW_FILE`: `voice-editor.yml`
+## Render Environment Variables
+- `GITHUB_TOKEN`: Fine-grained Personal Access Token (Contents: Read & Write, Actions: Read & Write)
+- `GITHUB_OWNER`: আপনার GitHub ইউজারনেম
+- `GITHUB_REPO`: প্রাইভেট রিপোজিটরির নাম
+- `GITHUB_WORKFLOW_FILE`: `documentary-maker.yml`
 - `GITHUB_BRANCH`: `main`
-- `APP_ACCESS_PIN`: optional access PIN. Set a long PIN if the site is public.
-
-Deploy as a Node web service. Node 20 or newer is required.
-
-## Use
-
-1. Open the Render URL.
-2. Enter the access PIN if configured.
-3. Upload an audio file. Uploading a `.txt` Bengali script is recommended.
-4. Wait for analysis.
-5. Listen to each suggested section. Keep or approve cuts manually.
-6. Select Original audio or Gentle noise reduction.
-7. Render and download MP3/WAV.
-
-## Limits and caveats
-
-- Default upload limit is 150 MB. Change `MAX_UPLOAD_BYTES` in `server.js` only if Render memory/disk limits can support it.
-- GitHub Actions job time is limited to 60 minutes.
-- Faster-Whisper's `medium` model can be slow on CPU. Set `WHISPER_MODEL=small` in the workflow if needed.
-- This is a conservative first release, not a substitute for listening. ASR may mishear Bengali words, names, accents, or code-switching.
-- Keep the GitHub repository private. GitHub Release assets in a private repository are private to authorized repository users.
-- This project has not been deployed or tested against your Render/GitHub accounts. Verify with a short test recording first.
+- `APP_ACCESS_PIN`: আপনার পছন্দের সিকিউরিটি PIN

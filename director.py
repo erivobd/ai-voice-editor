@@ -1,0 +1,219 @@
+import json
+import os
+import re
+from pathlib import Path
+from google import genai
+from google.genai import types
+from status import update_status
+
+WORK = Path(os.environ.get("WORK_DIR", "/tmp/doc_job"))
+
+
+def _build_prompt(transcript_data, doc_title):
+    duration = transcript_data["duration"]
+    lang = transcript_data.get("detected_language", "bn")
+    lines = []
+    for seg in transcript_data["segments"]:
+        lines.append(f"[{seg['start']:.2f}s - {seg['end']:.2f}s] {seg['text']}")
+    transcript_block = "\n".join(lines)
+
+    return f"""You are an award-winning Cinematic Documentary Film Director and Visual Editor.
+Analyze the following timestamped voiceover transcript (language: {lang}, total duration: {duration:.2f} seconds).
+Optional documentary title: "{doc_title}"
+
+Your job is to create a complete, seamless documentary scene plan from 0.0 seconds to {duration:.2f} seconds with NO gaps and NO overlapping timestamps.
+
+Rules:
+1. Divide the narration into dynamic documentary scenes (typically 5 to 12 seconds each; shorter for dramatic pacing).
+2. The first scene MUST start at 0.0 and the last scene MUST end at {duration:.2f}. Every next scene's start MUST equal the previous scene's end.
+3. Choose "visual_type":
+   - Use "stock_footage" for ~75% of scenes (nature, cities, mountains, ocean, historical places, science, space, people, technology).
+   - Use "motion_graphic" for ~25% of scenes (opening title card, maps/locations, timelines, statistics/charts, scientific concepts, key quotes).
+4. For every scene, provide 3 SIMPLE, CONCRETE English stock footage search queries in "search_queries" (e.g., ["ancient river sunset aerial", "misty mountains landscape", "calm ocean waves"]). Never write poetic or non-English search queries.
+5. For every scene, ALSO provide a "graphic" object so if stock footage is unavailable, the engine can seamlessly render a documentary graphic instead of repeating footage!
+   - graphic.kind must be one of: "title_card", "map_marker", "timeline", "stat_chart", "quote_card"
+   - graphic.heading: short crisp title in the narration's language (max 45 chars)
+   - graphic.subheading: concise context (max 80 chars)
+   - graphic.items: list of 2 to 4 short strings or "Label: Number" pairs (for timeline or stat_chart)
+6. Set overall "mood" to one of: "documentary_ambient", "mystery", "science", "history", "inspiring".
+7. Set overall "color_grade" to one of: "cinematic_teal", "warm_history", "cool_science", "neutral_doc".
+8. Return ONLY valid JSON matching this exact structure:
+{{
+  "title": "Documentary Title",
+  "mood": "documentary_ambient",
+  "color_grade": "cinematic_teal",
+  "scenes": [
+    {{
+      "scene_id": 1,
+      "start": 0.0,
+      "end": 6.5,
+      "visual_type": "motion_graphic",
+      "visual_description": "Opening cinematic title card introducing the topic",
+      "search_queries": ["dramatic dark clouds timelapse", "earth from space sunrise", "cinematic mountain fog"],
+      "transition": "fade",
+      "graphic": {{
+        "kind": "title_card",
+        "heading": "Main Title",
+        "subheading": "Documentary Subtitle",
+        "items": []
+      }}
+    }}
+  ]
+}}
+
+Timestamped Transcript:
+{transcript_block}
+"""
+
+
+def _extract_json(text):
+    text = (text or "").strip()
+    if text.startswith("```"):
+        text = re.sub(r"^```(?:json)?\s*", "", text)
+        text = re.sub(r"\s*```$", "", text)
+    return json.loads(text)
+
+
+def _validate_and_repair_plan(plan, duration, doc_title):
+    valid_moods = {"documentary_ambient", "mystery", "science", "history", "inspiring"}
+    valid_grades = {"cinematic_teal", "warm_history", "cool_science", "neutral_doc"}
+    valid_kinds = {"title_card", "map_marker", "timeline", "stat_chart", "quote_card"}
+
+    mood = plan.get("mood", "documentary_ambient")
+    if mood not in valid_moods:
+        mood = "documentary_ambient"
+
+    grade = plan.get("color_grade", "cinematic_teal")
+    if grade not in valid_grades:
+        grade = "cinematic_teal"
+
+    raw_scenes = plan.get("scenes") or []
+    repaired = []
+    cursor = 0.0
+
+    for sc in raw_scenes:
+        if cursor >= duration - 0.2:
+            break
+        try:
+            end_t = float(sc.get("end", cursor + 6.0))
+        except Exception:
+            end_t = cursor + 6.0
+
+        if end_t <= cursor + 1.5:
+            end_t = min(duration, cursor + 5.0)
+        if end_t > duration:
+            end_t = duration
+
+        vtype = sc.get("visual_type", "stock_footage")
+        if vtype not in ("stock_footage", "motion_graphic"):
+            vtype = "stock_footage"
+
+        queries = [str(q).strip() for q in (sc.get("search_queries") or []) if str(q).strip()]
+        if not queries:
+            queries = ["cinematic nature landscape aerial", "documentary dark clouds sky", "abstract light particles"]
+
+        g = sc.get("graphic") or {}
+        g_kind = g.get("kind", "title_card")
+        if g_kind not in valid_kinds:
+            g_kind = "title_card"
+
+        repaired.append({
+            "scene_id": len(repaired) + 1,
+            "start": round(cursor, 3),
+            "end": round(end_t, 3),
+            "duration": round(end_t - cursor, 3),
+            "visual_type": vtype,
+            "visual_description": str(sc.get("visual_description") or "Documentary visual scene"),
+            "search_queries": queries[:4],
+            "transition": sc.get("transition", "fade"),
+            "graphic": {
+                "kind": g_kind,
+                "heading": str(g.get("heading") or doc_title or "Documentary")[:60],
+                "subheading": str(g.get("subheading") or "")[:110],
+                "items": [str(x)[:60] for x in (g.get("items") or [])[:5]]
+            }
+        })
+        cursor = end_t
+
+    if not repaired:
+        seg_len = 8.0
+        t = 0.0
+        i = 1
+        while t < duration - 0.1:
+            nxt = min(duration, t + seg_len)
+            repaired.append({
+                "scene_id": i,
+                "start": round(t, 3),
+                "end": round(nxt, 3),
+                "duration": round(nxt - t, 3),
+                "visual_type": "motion_graphic" if i == 1 else "stock_footage",
+                "visual_description": "Cinematic documentary scene",
+                "search_queries": ["cinematic earth landscape aerial", "dramatic sky clouds", "ocean waves sunset"],
+                "transition": "fade",
+                "graphic": {
+                    "kind": "title_card",
+                    "heading": doc_title or "AI Documentary",
+                    "subheading": f"Part {i}",
+                    "items": []
+                }
+            })
+            t = nxt
+            i += 1
+    else:
+        repaired[-1]["end"] = round(duration, 3)
+        repaired[-1]["duration"] = round(repaired[-1]["end"] - repaired[-1]["start"], 3)
+
+    return {
+        "title": str(plan.get("title") or doc_title or "AI Documentary")[:100],
+        "mood": mood,
+        "color_grade": grade,
+        "total_duration": round(duration, 3),
+        "scene_count": len(repaired),
+        "scenes": repaired
+    }
+
+
+def create_scene_plan(transcript_data):
+    update_status("creating_scene_plan", "Gemini AI ডকুমেন্টারি দৃশ্য ও স্টোরিবোর্ড তৈরি করছে...", percent=40)
+
+    GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+    if not GEMINI_API_KEY:
+        raise RuntimeError("GEMINI_API_KEY সিক্রেট পাওয়া যায়নি। GitHub Repository Secrets-এ GEMINI_API_KEY সেট করুন।")
+
+    doc_title = os.environ.get("DOC_TITLE", "").strip()
+    prompt = _build_prompt(transcript_data, doc_title)
+
+    client = genai.Client(api_key=GEMINI_API_KEY)
+    models_to_try = ["gemini-2.5-flash", "gemini-2.0-flash"]
+    last_err = None
+    raw_plan = None
+
+    for model_name in models_to_try:
+        try:
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.4
+                )
+            )
+            raw_plan = _extract_json(response.text)
+            break
+        except Exception as e:
+            last_err = e
+            print(f"[WARN] Gemini model {model_name} failed: {e}", flush=True)
+
+    if raw_plan is None:
+        raise RuntimeError(f"Gemini API দৃশ্য পরিকল্পনা তৈরি করতে পারেনি: {last_err}")
+
+    scene_plan = _validate_and_repair_plan(raw_plan, transcript_data["duration"], doc_title)
+    out_path = WORK / "scene_plan.json"
+    out_path.write_text(json.dumps(scene_plan, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    update_status(
+        "creating_scene_plan",
+        f"দৃশ্য পরিকল্পনা তৈরি সম্পন্ন ({scene_plan['scene_count']}টি সিন, মুড: {scene_plan['mood']})।",
+        percent=48
+    )
+    return scene_plan

@@ -1,168 +1,128 @@
-
 <!doctype html>
 <html lang="bn">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#101827">
-  <title>AI Voice Editor</title>
+  <meta name="theme-color" content="#0b1220">
+  <title>AI Documentary Video Maker</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-
 <header class="top">
   <div>
-    <h1>🎙️ AI Voice Editor</h1>
-    <p>Your Voice. Perfectly Edited.</p>
+    <h1>🎬 AI Documentary Maker</h1>
+    <p>আপনার রেডি ভয়েসওভার থেকে স্বয়ংক্রিয় 1080p সিনেমাটিক ডকুমেন্টারি</p>
   </div>
-  <button id="btn-lock-pin" class="ghost hidden" type="button">লক</button>
+  <button id="btn-lock-pin" class="ghost hidden">লক</button>
 </header>
 
 <main>
-
-  <!-- LOGIN -->
   <section id="pin-card" class="panel hidden">
-    <h2>Welcome Back!</h2>
-    <p class="muted">তোমার ব্যক্তিগত Voice Editing Dashboard-এ প্রবেশ করতে পাসওয়ার্ড দাও।</p>
-
-    <form id="pin-form">
-      <label for="pin-input">Access Password</label>
-      <input
-        id="pin-input"
-        type="password"
-        placeholder="পাসওয়ার্ড লিখো"
-        autocomplete="current-password"
-        required
-      >
-      <p id="pin-error" class="error hidden">পাসওয়ার্ড সঠিক নয়। আবার চেষ্টা করো।</p>
-      <button id="btn-save-pin" type="submit">Unlock Dashboard</button>
-    </form>
-
-    <p class="muted">🔒 Private & Secure Workspace</p>
-    <small>Your recordings and editing files are protected.</small>
+    <h2>অ্যাক্সেস PIN</h2>
+    <p class="muted">অ্যাপ ব্যবহার করতে আপনার সিকিউরিটি PIN দিন।</p>
+    <input id="pin-input" type="password" inputmode="numeric" placeholder="Access PIN">
+    <p id="pin-error" class="error hidden">PIN সঠিক নয়। আবার চেষ্টা করুন।</p>
+    <button id="btn-save-pin">Unlock</button>
   </section>
 
-  <!-- UPLOAD -->
-  <section id="upload-card" class="panel">
-    <h2>নতুন অডিও এডিট</h2>
-    <p class="muted">
-      তোমার অডিও এবং বাংলা স্ক্রিপ্ট দাও। AI স্বয়ংক্রিয়ভাবে বিশ্লেষণ ও এডিট করবে।
-    </p>
+  <section id="upload-card" class="panel hidden">
+    <h2>নতুন ডকুমেন্টারি তৈরি করুন</h2>
+    <p class="muted">আপনার এডিট করা রেডি ভয়েসওভার আপলোড করুন। আপনার আসল কণ্ঠ অপরিবর্তিত রেখে AI পুরো ভিডিও তৈরি করবে।</p>
 
     <form id="upload-form">
+      <label>ডকুমেন্টারির শিরোনাম (ঐচ্ছিক)
+        <input id="title-input" type="text" maxlength="120" placeholder="যেমন: মহাবিশ্বের অজানা রহস্য">
+      </label>
 
-      <label for="audio-input">অডিও ফাইল নির্বাচন করো</label>
-      <input
-        id="audio-input"
-        type="file"
-        accept="audio/*,.m4a"
-        required
-      >
-      <small id="audio-meta">MP3, WAV, M4A, AAC, FLAC ইত্যাদি</small>
+      <label>ভয়েসওভার অডিও ফাইল
+        <input id="audio-input" type="file" accept=".mp3,.wav,.m4a,.aac,.flac" required>
+      </label>
+      <small id="audio-meta">সমর্থিত ফরম্যাট: MP3, WAV, M4A, AAC, FLAC (সর্বোচ্চ ১৫০ MB)</small>
 
-      <div class="script-section">
-        <label for="script-text-input">বাংলা স্ক্রিপ্ট পেস্ট করো</label>
-
-        <textarea
-          id="script-text-input"
-          rows="12"
-          placeholder="এখানে তোমার সম্পূর্ণ বাংলা স্ক্রিপ্ট কপি করে পেস্ট করো..."
-          spellcheck="false"
-        ></textarea>
-
-        <small>সম্পূর্ণ স্ক্রিপ্ট একসঙ্গে পেস্ট করতে পারবে।</small>
-
-        <div class="script-divider">
-          <span>অথবা TXT ফাইল আপলোড করো</span>
-        </div>
-
-        <label for="script-input">স্ক্রিপ্ট TXT ফাইল</label>
-        <input
-          id="script-input"
-          type="file"
-          accept=".txt,text/plain"
-        >
-        <small id="script-meta">
-          স্ক্রিপ্ট পেস্ট অথবা TXT ফাইল, যেকোনো একটি ব্যবহার করো।
-        </small>
+      <div class="toggles">
+        <label class="checkbox-label"><input id="opt-subtitles" type="checkbox" checked> ভিডিওতে বাংলা/অটো সাবটাইটেল যুক্ত করুন</label>
+        <label class="checkbox-label"><input id="opt-music" type="checkbox" checked> হালকা কপিরাইট-মুক্ত ব্যাকগ্রাউন্ড মিউজিক</label>
       </div>
 
-      <button id="btn-upload" type="submit">আপলোড ও এডিট শুরু করো</button>
+      <button id="btn-generate" type="submit" class="primary-btn">🎬 Generate Video</button>
     </form>
 
     <div id="upload-progress-wrap" class="hidden">
-      <div class="progress">
-        <div id="upload-bar-fill"></div>
+      <div class="progress"><div id="upload-bar-fill"></div></div>
+      <div class="progress-meta">
+        <span id="upload-percent">0%</span>
+        <span id="upload-status-text">আপলোড হচ্ছে...</span>
       </div>
-      <span id="upload-percent">0%</span>
-      <span id="upload-status-text">আপলোড হচ্ছে...</span>
     </div>
 
-    <button id="btn-history-toggle" class="ghost" type="button">
-      আগের কাজগুলো দেখো
-    </button>
+    <p id="upload-error" class="error hidden"></p>
+    <button id="btn-history-toggle" class="ghost">আগের ভিডিওগুলো দেখুন</button>
   </section>
 
-  <!-- HISTORY -->
   <section id="history-card" class="panel hidden">
     <div class="section-head">
-      <h2>আগের কাজগুলো</h2>
-      <button id="btn-close-history" class="ghost" type="button">বন্ধ</button>
+      <h2>আগের প্রজেক্টসমূহ</h2>
+      <button id="btn-close-history" class="ghost">বন্ধ</button>
     </div>
     <div id="history-list"></div>
   </section>
 
-  <!-- PROCESSING -->
   <section id="status-card" class="panel hidden">
-    <div class="spinner" id="status-spinner"></div>
-
-    <h2 id="status-title">অডিও প্রসেস হচ্ছে</h2>
-    <p id="status-message">একটু অপেক্ষা করো...</p>
-    <p id="status-job-id" class="muted"></p>
-
-    <div class="progress">
-      <div id="status-progress-fill"></div>
+    <div class="status-head">
+      <div class="spinner" id="status-spinner"></div>
+      <div>
+        <h2 id="status-stage-title">Uploading Audio</h2>
+        <p id="status-message" class="muted">অপেক্ষা করুন...</p>
+      </div>
+      <div class="big-percent" id="status-percent">5%</div>
     </div>
 
-    <p id="status-percent">প্রসেসিং চলছে</p>
-    <p id="status-stage-text" class="muted">অডিও বিশ্লেষণ করা হচ্ছে...</p>
+    <div class="progress"><div id="job-bar-fill" style="width:5%"></div></div>
+    <p id="status-job-id" class="muted small-id"></p>
 
-    <div id="status-actions" class="hidden">
-      <button id="btn-retry-status" type="button">আবার চেষ্টা</button>
-      <button id="btn-status-new-job" class="ghost" type="button">নতুন কাজ</button>
+    <ul id="stage-list" class="stage-list">
+      <li data-stage="uploading_audio">1. Uploading Audio</li>
+      <li data-stage="analyzing_voice">2. Analyzing Voice</li>
+      <li data-stage="generating_transcript">3. Generating Transcript</li>
+      <li data-stage="creating_scene_plan">4. Creating Scene Plan</li>
+      <li data-stage="collecting_footage">5. Collecting Footage</li>
+      <li data-stage="creating_graphics">6. Creating Graphics</li>
+      <li data-stage="editing_video">7. Editing Video</li>
+      <li data-stage="rendering_final_video">8. Rendering Final Video</li>
+      <li data-stage="completed">9. Completed</li>
+    </ul>
+
+    <div id="status-error-box" class="error-box hidden">
+      <strong>ত্রুটি ঘটেছে:</strong>
+      <pre id="status-error-text"></pre>
+    </div>
+
+    <div class="actions">
+      <button id="btn-refresh-status" class="ghost">স্ট্যাটাস রিফ্রেশ</button>
+      <button id="btn-status-new-job" class="ghost">নতুন ভিডিও বানান</button>
     </div>
   </section>
 
-  <!-- DOWNLOAD -->
-  <section id="download-card" class="panel hidden">
-    <h2>এডিট সম্পন্ন ✅</h2>
-    <p id="final-stats" class="muted"></p>
+  <section id="result-card" class="panel hidden">
+    <h2>ডকুমেন্টারি ভিডিও প্রস্তুত ✅</h2>
+    <p id="result-stats" class="muted"></p>
 
-    <h3>এডিট করা অডিও</h3>
-    <audio id="final-player" controls preload="metadata"></audio>
-
-    <p id="final-player-error" class="error hidden"></p>
+    <div class="videobox">
+      <video id="final-video-player" controls playsinline preload="metadata"></video>
+    </div>
 
     <div class="downloads">
-      <a id="dl-mp3" href="#">MP3 320 kbps ডাউনলোড</a>
-      <a id="dl-wav" href="#">WAV ডাউনলোড</a>
-      <a id="dl-report" href="#">এডিট রিপোর্ট</a>
-      <a id="dl-original" href="#">Original অডিও</a>
+      <a id="dl-mp4" class="primary-link">⬇️ MP4 (1080p) ডাউনলোড</a>
+      <a id="dl-plan">📋 Scene Plan (JSON)</a>
+      <a id="dl-transcript">📝 Transcript (JSON)</a>
+      <a id="dl-srt">💬 Subtitles (SRT)</a>
     </div>
 
-    <button id="btn-download-new-job" class="ghost" type="button">
-      নতুন অডিও এডিট করো
-    </button>
+    <button id="btn-result-new-job" class="ghost">নতুন ডকুমেন্টারি তৈরি করুন</button>
   </section>
-
 </main>
 
-<footer>
-  তোমার কণ্ঠই থাকবে আসল। AI শুধু অডিও বিশ্লেষণ ও এডিট করবে।
-  <br>
-  Protected Access • AI Voice Editor
-</footer>
-
+<footer>আপনার আসল কণ্ঠ ১০০% অক্ষত থাকে। Gemini AI + FFmpeg স্বয়ংক্রিয় ডকুমেন্টারি ইঞ্জিন।</footer>
 <script src="/app.js" defer></script>
 </body>
 </html>
