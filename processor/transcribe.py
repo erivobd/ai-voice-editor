@@ -168,6 +168,11 @@ def run_transcription():
         )
         raw_srt = custom_srt_path.read_text(encoding="utf-8", errors="replace")
         segments = parse_srt_or_script(raw_srt, duration)
+        if not segments:
+            raise RuntimeError(
+                "আপনি SRT/Transcript দিয়েছেন, কিন্তু সেটি থেকে কোনো ব্যবহারযোগ্য লেখা পাওয়া যায়নি। "
+                "ফাইলের টাইমস্ট্যাম্প ও টেক্সট ঠিক করে আবার আপলোড করুন। Whisper চালানো হয়নি।"
+            )
         if segments:
             full_text = " ".join(s["text"] for s in segments)
             transcript_data = {

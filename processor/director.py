@@ -28,6 +28,20 @@ OPENROUTER_MODELS = [
 VALID_GRADES = {"cinematic_teal", "warm_history", "cool_science", "neutral_doc"}
 VALID_GRAPHIC_KINDS = {"title_card", "stat_chart", "timeline", "map_marker"}
 
+
+def _scene_grade_for_text(text: str, requested: str = "") -> str:
+    """Choose a restrained scene-specific grade from the spoken topic."""
+    if requested in VALID_GRADES:
+        return requested
+    t = (text or "").lower()
+    if any(k in t for k in ("ইতিহাস", "প্রাচীন", "যুদ্ধ", "ঔপনিবেশ", "ঐতিহাসিক", "সভ্যতা")):
+        return "warm_history"
+    if any(k in t for k in ("বিজ্ঞান", "প্রযুক্তি", "মহাকাশ", "গবেষণা", "রোবট", "কম্পিউটার")):
+        return "cool_science"
+    if any(k in t for k in ("অর্থনীতি", "বাণিজ্য", "শিল্প", "রাজনীতি", "সরকার", "নির্বাচন", "চীন", "বাংলাদেশ")):
+        return "cinematic_teal"
+    return "neutral_doc"
+
 BENGALI_VISUAL_LEXICON = [
     (["রাতের আকাশ", "অসংখ্য তারা", "নক্ষত্র", "আকাশের দিকে", "তারা দেখতে"], "রাতের আকাশের তারা", ["অসংখ্য নক্ষত্র", "অসীম মহাকাশ"], "night sky full of stars milky way timelapse"),
     (["পৃথিবী", "নীল গ্রহ"], "নীল গ্রহ পৃথিবী", ["মহাবিশ্বের বুকে", "জীবনের আবাস"], "earth from space blue planet view"),
@@ -88,7 +102,9 @@ STRICT VISUAL & TIMING RULES:
    - Every scene MUST include a "graphic" object with Bengali "heading" (<= 30 chars) and 2-3 punchy Bengali "items" (<= 22 chars each) so animated badges & pills always appear on screen.
    - NEVER write the word "অধ্যায়" or chapter numbers anywhere.
    - Zero Hindi/Devanagari characters.
-7. Choose "color_grade" from: "cinematic_teal", "warm_history", "cool_science", "neutral_doc".
+7. Choose a documentary color grade appropriate to the overall story: "cinematic_teal", "warm_history", "cool_science", "neutral_doc".
+8. For each scene, choose a subtle camera movement: "slow_zoom_in", "slow_zoom_out", "pan_left", or "pan_right". Avoid aggressive movement.
+9. Scene-specific visual treatment must remain restrained and realistic; do not apply flashy effects to every scene.
 
 Return ONLY valid JSON with this schema:
 {{
@@ -102,6 +118,8 @@ Return ONLY valid JSON with this schema:
       "visual_type": "stock_footage",
       "rapid_cut": false,
       "search_queries": ["night sky full of stars milky way", "starry night sky cosmos timelapse"],
+      "motion_effect": "slow_zoom_in",
+      "color_grade": "cool_science",
       "accent": "red",
       "graphic": {{
         "kind": "title_card",
@@ -451,6 +469,7 @@ def _enforce_variety_and_pacing(
             "search_query": queries[0] if queries else "",
             "accent": accent,
             "motion_effect": sc.get("motion_effect") or motions[idx % len(motions)],
+            "color_grade": _scene_grade_for_text(seg_txt, str(sc.get("color_grade") or "")),
             "graphic": graphic,
             "overlay_headline": graphic["heading"],
             "overlay_subtext": graphic["subheading"],
@@ -491,6 +510,7 @@ def _enforce_variety_and_pacing(
                     "search_query": fq if vtype == "stock_footage" else "",
                     "accent": "red" if s_idx % 2 == 0 else "gold",
                     "motion_effect": motions[s_idx % len(motions)],
+                    "color_grade": _scene_grade_for_text(seg_txt),
                     "graphic": {
                         "kind": ["title_card", "stat_chart", "timeline", "map_marker"][s_idx % 4],
                         "heading": derived["heading"],
