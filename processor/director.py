@@ -209,11 +209,19 @@ def _call_gemini(prompt: str, api_key: str) -> Dict[str, Any]:
     from google import genai
 
     client = genai.Client(api_key=api_key)
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt,
-    )
-    return _extract_json(response.text or "")
+    models = ["gemini-3.0-flash", "gemini-2.5-flash", "gemini-2.0-flash"]
+    last_err = None
+    for m in models:
+        try:
+            response = client.models.generate_content(
+                model=m,
+                contents=prompt,
+            )
+            return _extract_json(response.text or "")
+        except Exception as e:
+            last_err = e
+            continue
+    raise RuntimeError(f"Gemini failed: {last_err}")
 
 
 def _normalize_graphic(sc: Dict[str, Any], idx: int) -> Dict[str, Any]:
@@ -320,7 +328,6 @@ def _enforce_variety_and_pacing(raw_scenes: List[Dict[str, Any]], total_duration
             vtype = "stock_footage" if is_rapid else ("motion_graphic" if idx % 3 == 2 else "stock_footage")
 
         if is_rapid:
-            # Allow up to 5 consecutive rapid-cut stock clips for spoken lists
             if consecutive_rapid_stock >= 5:
                 vtype = "motion_graphic"
                 consecutive_rapid_stock = 0

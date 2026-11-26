@@ -1,7 +1,6 @@
 import html
 import json
 import os
-import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -13,11 +12,32 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 REMOTION_SCRIPT = REPO_ROOT / "remotion" / "render_scenes.mjs"
 FONT_STACK = "Hind Siliguri, Noto Sans Bengali, Noto Sans, sans-serif"
 
-PALETTES = {
-    "cinematic_teal": {"bg1": "#08101c", "bg2": "#0f2035", "accent": "#facc15", "accent2": "#38bdf8", "text": "#f8fafc", "muted": "#cbd5e1"},
-    "warm_history": {"bg1": "#140e0a", "bg2": "#281b12", "accent": "#facc15", "accent2": "#ef4444", "text": "#fdf6ea", "muted": "#d6c5ad"},
-    "cool_science": {"bg1": "#090f20", "bg2": "#132042", "accent": "#facc15", "accent2": "#38bdf8", "text": "#f1f5f9", "muted": "#a8bddb"},
-    "neutral_doc": {"bg1": "#0b1120", "bg2": "#172033", "accent": "#facc15", "accent2": "#ef4444", "text": "#f8fafc", "muted": "#94a3b8"}
+THEME_PALETTES = {
+    "cinematic_dark": {
+        "bg1": "#08101c", "bg2": "#0f2035", "accent": "#facc15",
+        "accent2": "#38bdf8", "text": "#f8fafc", "muted": "#cbd5e1",
+        "card_bg": "#0f172a", "is_light": False,
+    },
+    "vox_colorful": {
+        "bg1": "#fef08a", "bg2": "#fde047", "accent": "#dc2626",
+        "accent2": "#111827", "text": "#111827", "muted": "#374151",
+        "card_bg": "#ffffff", "is_light": True,
+    },
+    "editorial_paper": {
+        "bg1": "#f6f1e7", "bg2": "#ebe2d2", "accent": "#d97706",
+        "accent2": "#0f766e", "text": "#1c1917", "muted": "#57534e",
+        "card_bg": "#fffdf9", "is_light": True,
+    },
+    "vibrant_gradient": {
+        "bg1": "#1e1b4b", "bg2": "#4c1d95", "accent": "#22d3ee",
+        "accent2": "#f472b6", "text": "#ffffff", "muted": "#e0e7ff",
+        "card_bg": "#1e1b4b", "is_light": False,
+    },
+    "minimal_light": {
+        "bg1": "#f8fafc", "bg2": "#e2e8f0", "accent": "#2563eb",
+        "accent2": "#10b981", "text": "#0f172a", "muted": "#475569",
+        "card_bg": "#ffffff", "is_light": True,
+    },
 }
 
 
@@ -68,10 +88,12 @@ def _build_stock_overlay_svg(scene, palette):
     g = scene.get("graphic") or {}
     heading = (g.get("heading") or scene.get("overlay_headline") or "").strip()
     subheading = (g.get("subheading") or scene.get("overlay_subtext") or "").strip()
-    if not heading:
+    if not heading or scene.get("rapid_cut"):
         return None
 
     accent = "#ef4444" if scene.get("accent") == "red" else palette["accent"]
+    box_fill = palette["card_bg"]
+    stroke_col = "#000000" if palette["is_light"] else "#ffffff"
     sid = int(scene.get("scene_id", 1))
 
     if sid % 2 == 1:
@@ -83,7 +105,7 @@ def _build_stock_overlay_svg(scene, palette):
             )
         box_h = 152 if subheading else 104
         return f"""<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
-  <rect x="260" y="56" width="1400" height="{box_h}" rx="20" fill="#0b1120" fill-opacity="0.78" stroke="#ffffff" stroke-opacity="0.16" stroke-width="2"/>
+  <rect x="260" y="56" width="1400" height="{box_h}" rx="20" fill="{box_fill}" fill-opacity="0.88" stroke="{stroke_col}" stroke-opacity="0.16" stroke-width="2"/>
   <rect x="900" y="56" width="120" height="6" rx="3" fill="{accent}"/>
   <text x="960" y="128" text-anchor="middle" fill="{palette["text"]}" font-family="{FONT_STACK}" font-size="52" font-weight="700">{_esc(heading[:42])}</text>
   {sub_svg}
@@ -97,7 +119,7 @@ def _build_stock_overlay_svg(scene, palette):
             )
         box_h = 160 if subheading else 110
         return f"""<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
-  <rect x="84" y="68" width="900" height="{box_h}" rx="18" fill="#0f172a" fill-opacity="0.84" stroke="#ffffff" stroke-opacity="0.18" stroke-width="2"/>
+  <rect x="84" y="68" width="900" height="{box_h}" rx="18" fill="{box_fill}" fill-opacity="0.90" stroke="{stroke_col}" stroke-opacity="0.18" stroke-width="2"/>
   <rect x="84" y="88" width="10" height="{box_h - 40}" rx="5" fill="{accent}"/>
   <text x="128" y="132" fill="{palette["text"]}" font-family="{FONT_STACK}" font-size="42" font-weight="700">{_esc(heading[:38])}</text>
   {sub_svg}
@@ -135,7 +157,14 @@ def create_motion_graphics(scene_plan):
     gfx_dir = WORK / "graphics"
     gfx_dir.mkdir(parents=True, exist_ok=True)
     color_grade = scene_plan.get("color_grade", "cinematic_teal")
-    palette = PALETTES.get(color_grade, PALETTES["cinematic_teal"])
+    video_theme = (
+        os.environ.get("VIDEO_THEME", "").strip()
+        or scene_plan.get("video_theme", "")
+        or "cinematic_dark"
+    )
+    if video_theme not in THEME_PALETTES:
+        video_theme = "cinematic_dark"
+    palette = THEME_PALETTES[video_theme]
 
     remotion_jobs = []
     job_scene_map = {}
@@ -159,6 +188,7 @@ def create_motion_graphics(scene_plan):
                 "items": g.get("items") or [],
                 "accent": scene.get("accent", "gold"),
                 "color_grade": color_grade,
+                "video_theme": video_theme,
                 "duration": round(dur, 2),
                 "output_path": str(out_mp4),
             })
@@ -175,7 +205,7 @@ def create_motion_graphics(scene_plan):
     if remotion_jobs and REMOTION_SCRIPT.exists() and shutil.which("node"):
         jobs_json = gfx_dir / "remotion_jobs.json"
         jobs_json.write_text(json.dumps(remotion_jobs, ensure_ascii=False, indent=2), encoding="utf-8")
-        print(f"[Graphics] Launching Remotion for {len(remotion_jobs)} animated scenes...", flush=True)
+        print(f"[Graphics] Launching Remotion ({video_theme}) for {len(remotion_jobs)} animated scenes...", flush=True)
         proc = subprocess.run(
             ["node", str(REMOTION_SCRIPT), str(jobs_json)],
             cwd=str(REPO_ROOT / "remotion"),
@@ -183,9 +213,11 @@ def create_motion_graphics(scene_plan):
             stderr=subprocess.STDOUT,
             text=True,
         )
-        print(proc.stdout[-3000:], flush=True)
+        print(proc.stdout[-4000:], flush=True)
         if proc.returncode != 0:
-            print(f"[WARN] Remotion exited with code {proc.returncode}; falling back for unrendered scenes.", flush=True)
+            print(f"[ERROR] Remotion failed with exit code {proc.returncode}", flush=True)
+    else:
+        print(f"[WARN] Remotion skipped: script_exists={REMOTION_SCRIPT.exists()}, node={shutil.which('node')}", flush=True)
 
     fallback_count = 0
     for sid, (scene, out_mp4) in job_scene_map.items():
@@ -201,7 +233,7 @@ def create_motion_graphics(scene_plan):
 
     update_status(
         "creating_graphics",
-        f"{remotion_ok}টি Remotion অ্যানিমেটেড গ্রাফিক্স ও {overlay_count}টি ওভারলে তৈরি সম্পন্ন।",
+        f"{remotion_ok}টি Remotion অ্যানিমেটেড গ্রাফিক্স (ফলব্যাক: {fallback_count}) ও {overlay_count}টি ওভারলে তৈরি সম্পন্ন।",
         percent=76,
     )
     return scene_plan
