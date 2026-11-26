@@ -90,6 +90,10 @@ jobs:
           AUDIO_LANGUAGE: bn
           WORK_DIR: /tmp/doc_job
           WHISPER_MODEL: small
+          VIDEO_ENCODER_PRESET: medium
+          VIDEO_SCENE_CRF: 19
+          VIDEO_FINAL_CRF: 18
+          AI_SCENE_CHUNK_SECONDS: 120
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
