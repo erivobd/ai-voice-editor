@@ -12,12 +12,24 @@
   ];
 
   const $ = (id) => document.getElementById(id);
-  let accessPin = localStorage.getItem("doc_maker_pin") || "";
-  let pinRequired = false;
+  let accessPin = sessionStorage.getItem("doc_maker_pin") || "";
+  let pinRequired = true;
   let currentJobId = localStorage.getItem("doc_maker_active_job") || "";
   let pollTimer = null;
+  const activeBlobUrls = [];
 
-  // Theme selector handling
+  function registerBlobUrl(url) {
+    activeBlobUrls.push(url);
+    return url;
+  }
+
+  function cleanupBlobUrls() {
+    while (activeBlobUrls.length) {
+      const u = activeBlobUrls.pop();
+      try { URL.revokeObjectURL(u); } catch (_e) {}
+    }
+  }
+
   const themeGrid = $("theme-grid");
   if (themeGrid) {
     themeGrid.addEventListener("click", (e) => {
@@ -26,9 +38,26 @@
       themeGrid.querySelectorAll(".theme-card").forEach((c) => c.classList.remove("active"));
       card.classList.add("active");
       const themeInput = $("opt-theme");
-      if (themeInput) themeInput.value = card.getAttribute("data-theme") || "cinematic_dark";
+      if (themeInput) themeInput.value = card.getAttribute("data-theme") || "crimson_noir";
     });
   }
+
+  function refreshSrtBadge() {
+    const badge = $("srt-mode-badge");
+    if (!badge) return;
+    const textVal = ($("srt-text-input")?.value || "").trim();
+    const fileVal = $("srt-file-input")?.files?.[0];
+    if (textVal) {
+      badge.textContent = "মোড: কাস্টম SRT টেক্সট ব্যবহৃত হবে (Whisper স্কিপ হবে)";
+    } else if (fileVal) {
+      badge.textContent = `মোড: কাস্টম ফাইল (${fileVal.name}) ব্যবহৃত হবে (Whisper স্কিপ হবে)`;
+    } else {
+      badge.textContent = "মোড: Whisper অটো-ট্রান্সক্রিপশন (বাংলা)";
+    }
+  }
+
+  $("srt-file-input")?.addEventListener("change", refreshSrtBadge);
+  $("srt-text-input")?.addEventListener("input", refreshSrtBadge);
 
   function showOnly(cardId) {
     ["pin-card", "upload-card", "history-card", "status-card", "result-card"].forEach((id) => {
@@ -40,18 +69,41 @@
     return accessPin ? { "X-Access-Pin": accessPin } : {};
   }
 
-  function assetUrl(jobId, name, download = false) {
-    const params = new URLSearchParams();
-    if (accessPin) params.set("pin", accessPin);
-    if (download) params.set("download", "1");
-    return `/api/jobs/${encodeURIComponent(jobId)}/asset/${encodeURIComponent(name)}?${params.toString()}`;
+  async function fetchProtectedAssetBlob(jobId, name) {
+    const res = await fetch(
+      `/api/jobs/${encodeURIComponent(jobId)}/asset/${encodeURIComponent(name)}`,
+      { headers: authHeaders() }
+    );
+    if (!res.ok) {
+      throw new Error(`Failed loading ${name} (${res.status})`);
+    }
+    return res.blob();
+  }
+
+  async function bindProtectedDownload(anchorEl, jobId, name, fallbackFilename) {
+    anchorEl.removeAttribute("href");
+    anchorEl.onclick = async (ev) => {
+      ev.preventDefault();
+      try {
+        const blob = await fetchProtectedAssetBlob(jobId, name);
+        const url = registerBlobUrl(URL.createObjectURL(blob));
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = fallbackFilename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      } catch (err) {
+        alert(err.message || "ডাউনলোড করা যায়নি।");
+      }
+    };
   }
 
   async function init() {
     try {
       const res = await fetch("/api/health");
       const data = await res.json();
-      pinRequired = Boolean(data.pinRequired);
+      pinRequired = data.pinRequired !== false;
     } catch (_e) {}
 
     if (pinRequired) {
@@ -99,15 +151,16 @@
       return;
     }
     accessPin = val;
-    localStorage.setItem("doc_maker_pin", accessPin);
+    sessionStorage.setItem("doc_maker_pin", accessPin);
     $("btn-lock-pin").classList.remove("hidden");
     enterApp();
   });
 
   $("btn-lock-pin").addEventListener("click", () => {
     stopPolling();
+    cleanupBlobUrls();
     accessPin = "";
-    localStorage.removeItem("doc_maker_pin");
+    sessionStorage.removeItem("doc_maker_pin");
     $("pin-input").value = "";
     $("btn-lock-pin").classList.add("hidden");
     showOnly("pin-card");
@@ -130,7 +183,15 @@
     formData.append("title", $("title-input").value.trim());
     formData.append("subtitles", $("opt-subtitles").checked ? "true" : "false");
     formData.append("bg_music", $("opt-music").checked ? "true" : "false");
-    formData.append("video_theme", ($("opt-theme") && $("opt-theme").value) || "cinematic_dark");
+    formData.append("video_theme", ($("opt-theme") && $("opt-theme").value) || "crimson_noir");
+
+    const srtTextVal = ($("srt-text-input")?.value || "").trim();
+    const srtFileVal = $("srt-file-input")?.files?.[0];
+    if (srtTextVal) {
+      formData.append("srt_text", srtTextVal);
+    } else if (srtFileVal) {
+      formData.append("srt_file", srtFileVal);
+    }
 
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/jobs");
@@ -219,7 +280,7 @@
 
       if (data.stage_key === "completed" && data.has_video) {
         stopPolling();
-        showResult(data);
+        await showResult(data);
       } else if (data.stage_key === "failed") {
         stopPolling();
         $("status-spinner").classList.add("hidden");
@@ -229,7 +290,8 @@
     } catch (_e) {}
   }
 
-  function showResult(data) {
+  async function showResult(data) {
+    cleanupBlobUrls();
     const stats = [];
     if (data.duration_sec) stats.push(`দৈর্ঘ্য: ${Math.round(data.duration_sec)} সেকেন্ড`);
     if (data.scene_count) stats.push(`দৃশ্য: ${data.scene_count}টি`);
@@ -237,21 +299,30 @@
     $("result-stats").textContent = stats.join(" • ") || "1080p MP4 প্রস্তুত";
 
     const videoEl = $("final-video-player");
-    videoEl.src = assetUrl(currentJobId, "final_documentary.mp4", false);
+    try {
+      const vidBlob = await fetchProtectedAssetBlob(currentJobId, "final_documentary.mp4");
+      videoEl.src = registerBlobUrl(URL.createObjectURL(vidBlob));
+    } catch (_e) {
+      videoEl.removeAttribute("src");
+    }
 
-    $("dl-mp4").href = assetUrl(currentJobId, "final_documentary.mp4", true);
-    $("dl-plan").href = assetUrl(currentJobId, "scene_plan.json", true);
-    $("dl-transcript").href = assetUrl(currentJobId, "transcript.json", true);
-    $("dl-srt").href = assetUrl(currentJobId, "subtitles.srt", true);
+    await bindProtectedDownload($("dl-mp4"), currentJobId, "final_documentary.mp4", `${currentJobId}_final_documentary.mp4`);
+    await bindProtectedDownload($("dl-plan"), currentJobId, "scene_plan.json", `${currentJobId}_scene_plan.json`);
+    await bindProtectedDownload($("dl-transcript"), currentJobId, "transcript.json", `${currentJobId}_transcript.json`);
+    await bindProtectedDownload($("dl-srt"), currentJobId, "subtitles.srt", `${currentJobId}_subtitles.srt`);
 
     showOnly("result-card");
   }
 
   function startNewJob() {
     stopPolling();
+    cleanupBlobUrls();
     currentJobId = "";
     localStorage.removeItem("doc_maker_active_job");
     $("audio-input").value = "";
+    if ($("srt-file-input")) $("srt-file-input").value = "";
+    if ($("srt-text-input")) $("srt-text-input").value = "";
+    refreshSrtBadge();
     showOnly("upload-card");
   }
 
@@ -261,29 +332,50 @@
 
   $("btn-history-toggle").addEventListener("click", async () => {
     showOnly("history-card");
-    $("history-list").innerHTML = "<p class='muted'>লোড হচ্ছে...</p>";
+    const listEl = $("history-list");
+    listEl.replaceChildren();
+    const loadingP = document.createElement("p");
+    loadingP.className = "muted";
+    loadingP.textContent = "লোড হচ্ছে...";
+    listEl.appendChild(loadingP);
+
     try {
       const res = await fetch("/api/jobs", { headers: authHeaders() });
       const data = await res.json();
       const jobs = data.jobs || [];
+      listEl.replaceChildren();
+
       if (!jobs.length) {
-        $("history-list").innerHTML = "<p class='muted'>এখনো কোনো ভিডিও তৈরি হয়নি।</p>";
+        const emptyP = document.createElement("p");
+        emptyP.className = "muted";
+        emptyP.textContent = "এখনো কোনো ভিডিও তৈরি হয়নি।";
+        listEl.appendChild(emptyP);
         return;
       }
-      $("history-list").innerHTML = "";
+
       jobs.forEach((j) => {
         const btn = document.createElement("button");
         btn.className = "history-item";
-        btn.innerHTML = `<span>${j.name}</span><span>${j.has_video ? "✅ Ready" : "⏳ In Progress"}</span>`;
+        const nameSpan = document.createElement("span");
+        nameSpan.textContent = String(j.name || j.job_id || "");
+        const stateSpan = document.createElement("span");
+        stateSpan.textContent = j.has_video ? "✅ Ready" : "⏳ In Progress";
+        btn.appendChild(nameSpan);
+        btn.appendChild(stateSpan);
         btn.addEventListener("click", () => openJob(j.job_id));
-        $("history-list").appendChild(btn);
+        listEl.appendChild(btn);
       });
     } catch (_e) {
-      $("history-list").innerHTML = "<p class='error'>লোড করা যায়নি।</p>";
+      listEl.replaceChildren();
+      const errP = document.createElement("p");
+      errP.className = "error";
+      errP.textContent = "লোড করা যায়নি।";
+      listEl.appendChild(errP);
     }
   });
 
   $("btn-close-history").addEventListener("click", () => showOnly("upload-card"));
 
+  refreshSrtBadge();
   init();
 })();

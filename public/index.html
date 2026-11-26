@@ -48,17 +48,25 @@
       </label>
       <small id="audio-meta">সমর্থিত ফরম্যাট: MP3, WAV, M4A, AAC, FLAC (সর্বোচ্চ ১৫০ MB)</small>
 
+      <div class="srt-box-wrap">
+        <span class="field-label">কাস্টম SRT ফাইল বা SRT/স্ক্রিপ্ট টেক্সট (ঐচ্ছিক)</span>
+        <small class="muted">SRT ফাইল দিলে বা নিচে টেক্সট পেস্ট করলে Whisper স্কিপ হবে; না দিলে Whisper (বাংলা) স্বয়ংক্রিয়ভাবে চলবে।</small>
+        <input id="srt-file-input" type="file" accept=".srt,.txt">
+        <textarea id="srt-text-input" rows="5" maxlength="250000" placeholder="ঐচ্ছিক: এখানে SRT বা টাইমস্ট্যাম্পড বাংলা স্ক্রিপ্ট কপি করে পেস্ট করুন..."></textarea>
+        <small id="srt-mode-badge" class="srt-badge">মোড: Whisper অটো-ট্রান্সক্রিপশন (বাংলা)</small>
+      </div>
+
       <div class="theme-picker-wrap">
         <span class="field-label">ভিডিও অ্যানিমেশন থিম</span>
-        <input type="hidden" id="opt-theme" name="video_theme" value="cinematic_dark">
+        <input type="hidden" id="opt-theme" name="video_theme" value="crimson_noir">
         <div class="theme-grid" id="theme-grid">
-          <button type="button" class="theme-card active" data-theme="cinematic_dark">
-            <span class="theme-swatch" style="background:linear-gradient(135deg,#08101c 55%,#facc15 100%);"></span>
-            <span class="theme-info"><strong>Cinematic Dark</strong><small>ডার্ক ও গোল্ড</small></span>
-          </button>
-          <button type="button" class="theme-card" data-theme="crimson_noir">
+          <button type="button" class="theme-card active" data-theme="crimson_noir">
             <span class="theme-swatch" style="background:linear-gradient(135deg,#0b0b0d 40%,#dc2626 75%,#ffffff 100%);"></span>
             <span class="theme-info"><strong>Crimson Noir</strong><small>লাল, সাদা ও কালো</small></span>
+          </button>
+          <button type="button" class="theme-card" data-theme="cinematic_dark">
+            <span class="theme-swatch" style="background:linear-gradient(135deg,#08101c 55%,#facc15 100%);"></span>
+            <span class="theme-info"><strong>Cinematic Dark</strong><small>ডার্ক ও গোল্ড</small></span>
           </button>
           <button type="button" class="theme-card" data-theme="vox_colorful">
             <span class="theme-swatch" style="background:linear-gradient(135deg,#fde047 55%,#dc2626 100%);"></span>
@@ -80,7 +88,7 @@
       </div>
 
       <div class="toggles">
-        <label class="checkbox-label"><input id="opt-subtitles" type="checkbox" checked> ভিডিওতে বাংলা/অটো সাবটাইটেল যুক্ত করুন</label>
+        <label class="checkbox-label"><input id="opt-subtitles" type="checkbox"> ভিডিওতে নিচে টানা সাবটাইটেল যুক্ত করুন (ডিফল্ট বন্ধ)</label>
         <label class="checkbox-label"><input id="opt-music" type="checkbox" checked> হালকা কপিরাইট-মুক্ত ব্যাকগ্রাউন্ড মিউজিক</label>
       </div>
 
@@ -162,7 +170,7 @@
   </section>
 </main>
 
-<footer>আপনার আসল কণ্ঠ ১০০% অক্ষত থাকে। Gemini AI + FFmpeg স্বয়ংক্রিয় ডকুমেন্টারি ইঞ্জিন।</footer>
+<footer>আপনার আসল কণ্ঠ ১০০% অক্ষত থাকে। FFmpeg + Pillow স্বয়ংক্রিয় ডকুমেন্টারি ইঞ্জিন।</footer>
 <script src="/app.js" defer></script>
 </body>
 </html>
