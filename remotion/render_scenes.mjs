@@ -20,9 +20,21 @@ async function main() {
     return;
   }
 
-  console.log(`[Remotion] Bundling composition for ${jobs.length} animated scenes...`);
+  // Support both remotion/src/index.js and fallback remotion/index.js
+  let entryPoint = path.resolve(__dirname, "src/index.js");
+  if (!fs.existsSync(entryPoint)) {
+    const altEntry = path.resolve(__dirname, "index.js");
+    if (fs.existsSync(altEntry)) {
+      entryPoint = altEntry;
+    } else {
+      console.error(`[Remotion] Entry point not found at ${entryPoint} or ${altEntry}`);
+      process.exit(1);
+    }
+  }
+
+  console.log(`[Remotion] Bundling composition from ${entryPoint} for ${jobs.length} animated scenes...`);
   const serveUrl = await bundle({
-    entryPoint: path.resolve(__dirname, "src/index.js"),
+    entryPoint,
     webpackOverride: (config) => config,
   });
 
@@ -37,6 +49,7 @@ async function main() {
         items: Array.isArray(job.items) ? job.items : [],
         accent: job.accent || "gold",
         colorGrade: job.color_grade || "cinematic_teal",
+        videoTheme: job.video_theme || "cinematic_dark",
         duration: Number(job.duration || 5.0),
       };
 
