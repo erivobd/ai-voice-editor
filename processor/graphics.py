@@ -1,63 +1,70 @@
 import html
-import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 from status import update_status
 
 WORK = Path(os.environ.get("WORK_DIR", "/tmp/doc_job"))
 REPO_ROOT = Path(__file__).resolve().parent.parent
-REMOTION_SCRIPT = REPO_ROOT / "remotion" / "render_scenes.mjs"
 FONT_STACK = "Hind Siliguri, Noto Sans Bengali, Noto Sans, sans-serif"
 
+FONT_CANDIDATES = [
+    REPO_ROOT / "assets" / "fonts" / "HindSiliguri-Bold.ttf",
+    Path("/usr/share/fonts/truetype/noto/NotoSansBengali-Bold.ttf"),
+    Path("/usr/share/fonts/opentype/noto/NotoSansBengali-Bold.ttf"),
+    Path("/usr/share/fonts/truetype/beng/kalpurush.ttf"),
+]
+
 THEME_PALETTES = {
+    "crimson_noir": {
+        "bg1": "#09090b", "bg2": "#1c060b", "accent": "#dc2626",
+        "accent2": "#ffffff", "text": "#ffffff", "muted": "#e4e4e7",
+        "card_bg": "#141418", "pill_bg": "#18181b", "is_light": False,
+    },
     "cinematic_dark": {
         "bg1": "#08101c", "bg2": "#0f2035", "accent": "#facc15",
-        "accent_text": "#090d16", "accent2": "#38bdf8",
-        "text": "#f8fafc", "muted": "#cbd5e1",
-        "card_bg": "#0f172a", "is_light": False,
-    },
-    "crimson_noir": {
-        "bg1": "#09090b", "bg2": "#1a0609", "accent": "#dc2626",
-        "accent_text": "#ffffff", "accent2": "#ffffff",
-        "text": "#ffffff", "muted": "#d4d4d8",
-        "card_bg": "#121216", "is_light": False,
+        "accent2": "#38bdf8", "text": "#f8fafc", "muted": "#cbd5e1",
+        "card_bg": "#0f172a", "pill_bg": "#1e293b", "is_light": False,
     },
     "vox_colorful": {
         "bg1": "#fef08a", "bg2": "#fde047", "accent": "#dc2626",
-        "accent_text": "#ffffff", "accent2": "#111827",
-        "text": "#111827", "muted": "#374151",
-        "card_bg": "#ffffff", "is_light": True,
+        "accent2": "#111827", "text": "#111827", "muted": "#374151",
+        "card_bg": "#ffffff", "pill_bg": "#111827", "is_light": True,
     },
     "editorial_paper": {
         "bg1": "#f6f1e7", "bg2": "#ebe2d2", "accent": "#d97706",
-        "accent_text": "#ffffff", "accent2": "#0f766e",
-        "text": "#1c1917", "muted": "#57534e",
-        "card_bg": "#fffdf9", "is_light": True,
+        "accent2": "#0f766e", "text": "#1c1917", "muted": "#57534e",
+        "card_bg": "#fffdf9", "pill_bg": "#1c1917", "is_light": True,
     },
     "vibrant_gradient": {
         "bg1": "#1e1b4b", "bg2": "#4c1d95", "accent": "#22d3ee",
-        "accent_text": "#0f172a", "accent2": "#f472b6",
-        "text": "#ffffff", "muted": "#e0e7ff",
-        "card_bg": "#1e1b4b", "is_light": False,
+        "accent2": "#f472b6", "text": "#ffffff", "muted": "#e0e7ff",
+        "card_bg": "#1e1b4b", "pill_bg": "#0f172a", "is_light": False,
     },
     "minimal_light": {
         "bg1": "#f8fafc", "bg2": "#e2e8f0", "accent": "#2563eb",
-        "accent_text": "#ffffff", "accent2": "#10b981",
-        "text": "#0f172a", "muted": "#475569",
-        "card_bg": "#ffffff", "is_light": True,
+        "accent2": "#10b981", "text": "#0f172a", "muted": "#475569",
+        "card_bg": "#ffffff", "pill_bg": "#0f172a", "is_light": True,
     },
 }
 
 
-def _esc(text):
-    return html.escape(str(text or ""))
+def _strip_chapter_and_hindi(text: str) -> str:
+    s = re.sub(r"[\u0900-\u097F]+", "", str(text or ""))
+    s = re.sub(r"^\s*অধ্যায়\s*[\d০-৯]+\s*(?://|[-–—:])?\s*", "", s, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", s).strip()
 
 
-def _wrap_text(text, max_chars=30):
-    words = str(text or "").split()
+def _esc(text: str) -> str:
+    return html.escape(_strip_chapter_and_hindi(text))
+
+
+def _wrap_text(text: str, max_chars=26):
+    cleaned = _strip_chapter_and_hindi(text)
+    words = cleaned.split()
     lines, cur = [], []
     length = 0
     for w in words:
@@ -73,7 +80,14 @@ def _wrap_text(text, max_chars=30):
     return lines[:3]
 
 
-def _render_svg_to_png(svg_content, png_path, transparent=False):
+def _find_font_path():
+    for p in FONT_CANDIDATES:
+        if p.exists():
+            return str(p)
+    return None
+
+
+def _render_svg_to_png(svg_content: str, png_path: Path, transparent: bool = False) -> Path:
     svg_path = png_path.with_suffix(".svg")
     svg_path.write_text(svg_content, encoding="utf-8")
 
@@ -82,138 +96,212 @@ def _render_svg_to_png(svg_content, png_path, transparent=False):
             ["rsvg-convert", "-w", "1920", "-h", "1080", str(svg_path), "-o", str(png_path)],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
         )
-        if proc.returncode == 0 and png_path.exists():
+        if proc.returncode == 0 and png_path.exists() and png_path.stat().st_size > 500:
             return png_path
 
     if transparent:
         img = Image.new("RGBA", (1920, 1080), (0, 0, 0, 0))
     else:
-        img = Image.new("RGB", (1920, 1080), (11, 17, 32))
+        img = Image.new("RGB", (1920, 1080), (12, 12, 16))
         draw = ImageDraw.Draw(img)
-        draw.rectangle([120, 480, 1800, 488], fill=(220, 38, 38))
+        font_path = _find_font_path()
+        font = ImageFont.truetype(font_path, 56) if font_path else ImageFont.load_default()
+        draw.rectangle([140, 260, 280, 270], fill=(220, 38, 38))
+        draw.text((140, 310), "ডকুমেন্টারি তথ্য", fill=(255, 255, 255), font=font)
     img.save(png_path)
     return png_path
 
 
-def _build_stock_overlay_svg(scene, palette):
-    """Editorial badge tag + bold kinetic headline + optional pill callouts (no bulky box, no watermark)."""
+def _build_stock_overlay_svg(scene: dict, palette: dict):
+    if scene.get("rapid_cut"):
+        return None
     g = scene.get("graphic") or {}
-    heading = (g.get("heading") or scene.get("overlay_headline") or "").strip()
-    subheading = (g.get("subheading") or scene.get("overlay_subtext") or "").strip()
-    items = g.get("items") or []
+    heading = _strip_chapter_and_hindi(g.get("heading") or scene.get("overlay_headline") or "")
+    subheading = _strip_chapter_and_hindi(g.get("subheading") or scene.get("overlay_subtext") or "")
+    items = [_strip_chapter_and_hindi(x) for x in (g.get("items") or []) if _strip_chapter_and_hindi(x)][:3]
 
-    # Skip rapid cuts or scenes without an explicit key-point headline
-    if not heading or scene.get("rapid_cut") or not scene.get("show_overlay", True):
+    if not heading and not items:
         return None
 
-    accent = palette["accent"]
-    accent_text = palette["accent_text"]
-    sid = int(scene.get("scene_id", 1))
+    accent = "#dc2626" if scene.get("accent") == "red" or palette == THEME_PALETTES["crimson_noir"] else palette["accent"]
+    box_fill = palette["card_bg"]
+    pill_bg = palette["pill_bg"]
+    stroke_col = "#000000" if palette["is_light"] else "#ffffff"
 
-    # Optional pill callouts near the bottom
-    pills_svg = ""
-    if items:
-        pill_els = []
-        x_cur = 96
-        for raw_it in items[:2]:
-            txt = str(raw_it).strip()[:28]
-            if not txt:
-                continue
-            w = max(210, min(460, len(txt) * 18 + 80))
-            pill_els.append(
-                f'<g transform="translate({x_cur}, 940)">'
-                f'<rect x="0" y="0" width="{w}" height="62" rx="31" fill="#09090b" fill-opacity="0.78" stroke="{accent}" stroke-width="2.5"/>'
-                f'<circle cx="30" cy="31" r="7" fill="{accent}"/>'
-                f'<text x="52" y="42" fill="#ffffff" font-family="{FONT_STACK}" font-size="28" font-weight="700">{_esc(txt)}</text>'
-                f'</g>'
+    parts = []
+
+    if heading:
+        h_lines = _wrap_text(heading, 28)
+        main_h = h_lines[0]
+        box_w = max(560, min(1480, len(main_h) * 34 + 140))
+        box_x = (1920 - box_w) // 2
+        box_h = 148 if subheading else 104
+        parts.append(
+            f'<rect x="{box_x}" y="48" width="{box_w}" height="{box_h}" rx="20" '
+            f'fill="{box_fill}" fill-opacity="0.90" stroke="{stroke_col}" stroke-opacity="0.18" stroke-width="2"/>'
+        )
+        parts.append(
+            f'<rect x="{box_x + 26}" y="72" width="10" height="{box_h - 48}" rx="5" fill="{accent}"/>'
+        )
+        parts.append(
+            f'<text x="{box_x + 56}" y="114" fill="{palette["text"]}" '
+            f'font-family="{FONT_STACK}" font-size="44" font-weight="700">{_esc(main_h)}</text>'
+        )
+        if subheading:
+            parts.append(
+                f'<text x="{box_x + 56}" y="144" fill="{accent}" '
+                f'font-family="{FONT_STACK}" font-size="28" font-weight="600">{_esc(subheading[:44])}</text>'
             )
-            x_cur += w + 20
-        pills_svg = "".join(pill_els)
 
-    badge_text = (subheading[:36] if subheading else f"মূল তথ্য").strip()
-    badge_w = max(190, min(580, len(badge_text) * 17 + 64))
+    if items:
+        cur_x = 110
+        pill_y = 890
+        pill_h = 68
+        for it in items:
+            label = it[:24]
+            pill_w = max(230, min(520, len(label) * 26 + 92))
+            if cur_x + pill_w > 1810:
+                break
+            parts.append(
+                f'<rect x="{cur_x}" y="{pill_y}" width="{pill_w}" height="{pill_h}" rx="34" '
+                f'fill="{pill_bg}" fill-opacity="0.92" stroke="{accent}" stroke-width="2.5"/>'
+            )
+            parts.append(
+                f'<circle cx="{cur_x + 30}" cy="{pill_y + pill_h // 2}" r="8" fill="{accent}"/>'
+            )
+            parts.append(
+                f'<text x="{cur_x + 52}" y="{pill_y + 44}" fill="#ffffff" '
+                f'font-family="{FONT_STACK}" font-size="30" font-weight="700">{_esc(label)}</text>'
+            )
+            cur_x += pill_w + 22
 
-    if sid % 2 == 1:
-        # Top-left editorial badge + bold headline over subtle gradient
-        return f"""<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
-  <defs>
-    <linearGradient id="topFade" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#000000" stop-opacity="0.62"/>
-      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
-    </linearGradient>
-    <filter id="txtShadow" x="-10%" y="-10%" width="120%" height="120%">
-      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000000" flood-opacity="0.85"/>
-    </filter>
-  </defs>
-  <rect x="0" y="0" width="1920" height="290" fill="url(#topFade)"/>
-  <rect x="96" y="72" width="{badge_w}" height="48" rx="8" fill="{accent}"/>
-  <circle cx="122" cy="96" r="6" fill="{accent_text}"/>
-  <text x="142" y="106" fill="{accent_text}" font-family="{FONT_STACK}" font-size="26" font-weight="700">{_esc(badge_text)}</text>
-  <text x="96" y="192" fill="#ffffff" font-family="{FONT_STACK}" font-size="60" font-weight="700" filter="url(#txtShadow)">{_esc(heading[:40])}</text>
-  {pills_svg}
-</svg>"""
-    else:
-        # Centered kinetic callout near lower-third (clean, high-impact)
-        bx = 960 - (badge_w // 2)
-        return f"""<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
-  <defs>
-    <linearGradient id="botFade" x1="0" y1="1" x2="0" y2="0">
-      <stop offset="0%" stop-color="#000000" stop-opacity="0.68"/>
-      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
-    </linearGradient>
-    <filter id="txtShadow" x="-10%" y="-10%" width="120%" height="120%">
-      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000000" flood-opacity="0.88"/>
-    </filter>
-  </defs>
-  <rect x="0" y="760" width="1920" height="320" fill="url(#botFade)"/>
-  <rect x="{bx}" y="818" width="{badge_w}" height="46" rx="8" fill="{accent}"/>
-  <text x="960" y="850" text-anchor="middle" fill="{accent_text}" font-family="{FONT_STACK}" font-size="25" font-weight="700">{_esc(badge_text)}</text>
-  <text x="960" y="936" text-anchor="middle" fill="#ffffff" font-family="{FONT_STACK}" font-size="62" font-weight="700" filter="url(#txtShadow)">{_esc(heading[:42])}</text>
-</svg>"""
+    if not parts:
+        return None
+
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">\n'
+        f'  {"".join(parts)}\n'
+        f'</svg>'
+    )
 
 
-def _build_fallback_svg_card(scene, palette):
+def _build_infographic_svg(scene: dict, palette: dict) -> str:
     g = scene.get("graphic") or {}
-    heading = g.get("heading") or scene.get("overlay_headline") or "ডকুমেন্টারি তথ্য"
-    subheading = g.get("subheading") or scene.get("overlay_subtext") or ""
-    accent = palette["accent"]
-    h_lines = _wrap_text(heading, 28)
-    sub_lines = _wrap_text(subheading, 48)
+    kind = g.get("kind") or "title_card"
+    heading = _strip_chapter_and_hindi(g.get("heading") or scene.get("overlay_headline") or "মূল তথ্য")
+    subheading = _strip_chapter_and_hindi(g.get("subheading") or scene.get("overlay_subtext") or "")
+    items = [_strip_chapter_and_hindi(x) for x in (g.get("items") or []) if _strip_chapter_and_hindi(x)][:4]
+    accent = "#dc2626" if scene.get("accent") == "red" or palette == THEME_PALETTES["crimson_noir"] else palette["accent"]
 
-    heading_svg = [
-        f'<text x="160" y="{340 + i * 94}" fill="{palette["text"]}" font-family="{FONT_STACK}" font-size="76" font-weight="700">{_esc(line)}</text>'
+    h_lines = _wrap_text(heading, 24)
+    heading_svg = "".join(
+        f'<text x="140" y="{250 + i * 86}" fill="{palette["text"]}" '
+        f'font-family="{FONT_STACK}" font-size="68" font-weight="700">{_esc(line)}</text>'
         for i, line in enumerate(h_lines)
-    ]
-    sub_y = 340 + len(h_lines) * 94 + 24
-    sub_svg = [
-        f'<text x="160" y="{sub_y + i * 54}" fill="{accent}" font-family="{FONT_STACK}" font-size="38" font-weight="600">{_esc(line)}</text>'
-        for i, line in enumerate(sub_lines)
-    ]
+    )
+    next_y = 250 + len(h_lines) * 86 + 18
+    sub_svg = ""
+    if subheading:
+        sub_svg = (
+            f'<text x="140" y="{next_y}" fill="{accent}" '
+            f'font-family="{FONT_STACK}" font-size="36" font-weight="600">{_esc(subheading[:48])}</text>'
+        )
+        next_y += 64
+
+    body_svg = ""
+    if kind == "stat_chart" and items:
+        rows = []
+        for idx, raw_item in enumerate(items[:4]):
+            parts = re.split(r"[:\-—]", raw_item, maxsplit=1)
+            lbl = parts[0].strip()[:24] or f"তথ্য {idx + 1}"
+            num_m = re.search(r"(\d+(?:\.\d+)?)", raw_item)
+            pct = min(100.0, max(18.0, float(num_m.group(1)))) if num_m else min(95.0, 35.0 + idx * 18.0)
+            val_txt = parts[1].strip()[:14] if len(parts) > 1 and parts[1].strip() else f"{int(pct)}%"
+            ry = next_y + 16 + idx * 112
+            bar_w = int((pct / 100.0) * 1150)
+            rows.append(
+                f'<text x="140" y="{ry}" fill="{palette["text"]}" font-family="{FONT_STACK}" font-size="32" font-weight="700">{_esc(lbl)}</text>'
+                f'<text x="1310" y="{ry}" text-anchor="end" fill="{accent}" font-family="{FONT_STACK}" font-size="32" font-weight="700">{_esc(val_txt)}</text>'
+                f'<rect x="140" y="{ry + 14}" width="1170" height="28" rx="14" fill="{palette["card_bg"]}" stroke="{accent}" stroke-opacity="0.35" stroke-width="2"/>'
+                f'<rect x="140" y="{ry + 14}" width="{bar_w}" height="28" rx="14" fill="{accent}"/>'
+            )
+        body_svg = "".join(rows)
+    elif items:
+        pills_svg = []
+        px = 140
+        py = next_y + 20
+        for it in items[:4]:
+            txt = it[:26]
+            pw = max(280, min(620, len(txt) * 28 + 110))
+            if px + pw > 1760:
+                px = 140
+                py += 92
+            if py > 920:
+                break
+            pills_svg.append(
+                f'<rect x="{px}" y="{py}" width="{pw}" height="72" rx="36" '
+                f'fill="{palette["pill_bg"]}" stroke="{accent}" stroke-width="2.5"/>'
+                f'<circle cx="{px + 34}" cy="{py + 36}" r="10" fill="{accent}"/>'
+                f'<text x="{px + 58}" y="{py + 47}" fill="#ffffff" font-family="{FONT_STACK}" font-size="32" font-weight="700">{_esc(txt)}</text>'
+            )
+            px += pw + 24
+        body_svg = "".join(pills_svg)
+
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
-  <rect width="1920" height="1080" fill="{palette["bg1"]}"/>
-  <rect x="160" y="210" width="120" height="8" rx="4" fill="{accent}"/>
-  {"".join(heading_svg)}
-  {"".join(sub_svg)}
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="{palette["bg1"]}"/>
+      <stop offset="100%" stop-color="{palette["bg2"]}"/>
+    </linearGradient>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#bgGrad)"/>
+  <rect x="140" y="165" width="140" height="9" rx="4.5" fill="{accent}"/>
+  {heading_svg}
+  {sub_svg}
+  {body_svg}
 </svg>"""
 
 
-def create_motion_graphics(scene_plan):
-    update_status("creating_graphics", "Remotion অ্যানিমেটেড মোশন গ্রাফিক্স ও ওভারলে তৈরি হচ্ছে...", percent=70)
+def _render_animated_infographic_mp4(png_path: Path, out_mp4: Path, duration: float, scene_id: int) -> Path:
+    dur = max(1.5, float(duration))
+    frames = max(45, int(round(dur * 30)))
+    if scene_id % 2 == 1:
+        zp = f"zoompan=z='min(zoom+0.0005,1.07)':d={frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1920x1080:fps=30"
+    else:
+        zp = f"zoompan=z='zoom+0.0004':d={frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1920x1080:fps=30"
+
+    cmd = [
+        "ffmpeg", "-y",
+        "-loop", "1",
+        "-i", str(png_path),
+        "-t", f"{dur:.3f}",
+        "-an",
+        "-vf", f"{zp},format=yuv420p",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+        "-pix_fmt", "yuv420p",
+        str(out_mp4)
+    ]
+    proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if proc.returncode != 0 or not out_mp4.exists():
+        raise RuntimeError(f"Infographic video render failed: {proc.stderr[-800:]}")
+    return out_mp4
+
+
+def create_motion_graphics(scene_plan: dict) -> dict:
+    update_status("creating_graphics", "FFmpeg + Pillow অ্যানিমেটেড ইনফোগ্রাফিক্স ও পিল ওভারলে তৈরি হচ্ছে...", percent=70)
 
     gfx_dir = WORK / "graphics"
     gfx_dir.mkdir(parents=True, exist_ok=True)
-    color_grade = scene_plan.get("color_grade", "cinematic_teal")
     video_theme = (
         os.environ.get("VIDEO_THEME", "").strip()
         or scene_plan.get("video_theme", "")
-        or "cinematic_dark"
+        or "crimson_noir"
     )
     if video_theme not in THEME_PALETTES:
-        video_theme = "cinematic_dark"
+        video_theme = "crimson_noir"
     palette = THEME_PALETTES[video_theme]
 
-    remotion_jobs = []
-    job_scene_map = {}
+    graphic_count = 0
     overlay_count = 0
 
     for scene in scene_plan.get("scenes", []):
@@ -221,24 +309,17 @@ def create_motion_graphics(scene_plan):
         scene["graphic_video_path"] = None
         scene["graphic_path"] = None
         scene["overlay_path"] = None
+        dur = max(1.5, float(scene.get("duration") or (float(scene.get("end", 5.0)) - float(scene.get("start", 0.0)))))
 
         if scene.get("visual_type") == "motion_graphic" or not scene.get("footage_path"):
-            g = scene.get("graphic") or {}
-            out_mp4 = gfx_dir / f"remotion_{sid:03d}.mp4"
-            dur = max(1.5, float(scene.get("duration") or (float(scene.get("end", 5.0)) - float(scene.get("start", 0.0)))))
-            remotion_jobs.append({
-                "scene_id": sid,
-                "kind": g.get("kind", "visual_callout"),
-                "heading": g.get("heading") or scene.get("overlay_headline") or f"অধ্যায় {sid}",
-                "subheading": g.get("subheading") or scene.get("overlay_subtext") or "",
-                "items": g.get("items") or [],
-                "accent": palette["accent"],
-                "color_grade": color_grade,
-                "video_theme": video_theme,
-                "duration": round(dur, 2),
-                "output_path": str(out_mp4),
-            })
-            job_scene_map[sid] = (scene, out_mp4)
+            card_png = gfx_dir / f"infographic_{sid:03d}.png"
+            out_mp4 = gfx_dir / f"graphic_{sid:03d}.mp4"
+            svg = _build_infographic_svg(scene, palette)
+            _render_svg_to_png(svg, card_png, transparent=False)
+            _render_animated_infographic_mp4(card_png, out_mp4, dur, sid)
+            scene["graphic_video_path"] = str(out_mp4)
+            scene["graphic_path"] = str(card_png)
+            graphic_count += 1
         else:
             ov_svg = _build_stock_overlay_svg(scene, palette)
             if ov_svg:
@@ -247,39 +328,9 @@ def create_motion_graphics(scene_plan):
                 scene["overlay_path"] = str(ov_path)
                 overlay_count += 1
 
-    remotion_ok = 0
-    if remotion_jobs and REMOTION_SCRIPT.exists() and shutil.which("node"):
-        jobs_json = gfx_dir / "remotion_jobs.json"
-        jobs_json.write_text(json.dumps(remotion_jobs, ensure_ascii=False, indent=2), encoding="utf-8")
-        print(f"[Graphics] Launching Remotion ({video_theme}) for {len(remotion_jobs)} animated scenes...", flush=True)
-        proc = subprocess.run(
-            ["node", str(REMOTION_SCRIPT), str(jobs_json)],
-            cwd=str(REPO_ROOT / "remotion"),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-        print(proc.stdout[-4000:], flush=True)
-        if proc.returncode != 0:
-            print(f"[ERROR] Remotion failed with exit code {proc.returncode}", flush=True)
-    else:
-        print(f"[WARN] Remotion skipped: script_exists={REMOTION_SCRIPT.exists()}, node={shutil.which('node')}", flush=True)
-
-    fallback_count = 0
-    for sid, (scene, out_mp4) in job_scene_map.items():
-        if out_mp4.exists() and out_mp4.stat().st_size > 15_000:
-            scene["graphic_video_path"] = str(out_mp4)
-            remotion_ok += 1
-        else:
-            png_path = gfx_dir / f"graphic_{sid:03d}.png"
-            svg = _build_fallback_svg_card(scene, palette)
-            _render_svg_to_png(svg, png_path, transparent=False)
-            scene["graphic_path"] = str(png_path)
-            fallback_count += 1
-
     update_status(
         "creating_graphics",
-        f"{remotion_ok}টি Remotion অ্যানিমেটেড গ্রাফিক্স (ফলব্যাক: {fallback_count}) ও {overlay_count}টি ওভারলে তৈরি সম্পন্ন।",
+        f"FFmpeg + Pillow এ {graphic_count}টি ইনফোগ্রাফিক ও {overlay_count}টি পিল/ব্যাজ ওভারলে তৈরি সম্পন্ন।",
         percent=76,
     )
     return scene_plan

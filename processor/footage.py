@@ -8,6 +8,15 @@ from status import update_status
 WORK = Path(os.environ.get("WORK_DIR", "/tmp/doc_job"))
 USER_AGENT = "AIDocumentaryVideoMaker/1.0 (https://github.com/; contact: documentary-worker)"
 
+BLOCKED_LICENSE_TOKENS = ("nc", "non-commercial", "noncommercial", "nd", "no-derivatives", "rights-managed")
+
+
+def _is_license_unrestricted(license_label: str) -> bool:
+    low = (license_label or "").strip().lower()
+    if not low:
+        return True
+    return not any(tok in low for tok in BLOCKED_LICENSE_TOKENS)
+
 
 def _pick_best_pexels_file(video_files):
     landscape = [
@@ -122,7 +131,7 @@ def _search_nasa_photo(query, used_ids):
             nasa_id = data_list[0].get("nasa_id")
             if not nasa_id:
                 continue
-            pid = f"nasa_{nasa_id}"
+            pid = f"nasa_pd_{nasa_id}"
             if pid in used_ids:
                 continue
             links = item.get("links") or []
@@ -134,7 +143,8 @@ def _search_nasa_photo(query, used_ids):
     return None, None
 
 
-def _search_wikimedia_photo(query, used_ids):
+def _search_wikimedia_cc0_photo(query, used_ids):
+    cc0_query = f'{query} incategory:"CC0" OR incategory:"Public domain" filetype:bitmap'
     try:
         r = requests.get(
             "https://commons.wikimedia.org/w/api.php",
@@ -143,11 +153,11 @@ def _search_wikimedia_photo(query, used_ids):
                 "action": "query",
                 "format": "json",
                 "generator": "search",
-                "gsrsearch": f"{query} filetype:bitmap",
+                "gsrsearch": cc0_query,
                 "gsrnamespace": 6,
                 "gsrlimit": 10,
                 "prop": "imageinfo",
-                "iiprop": "url|size|mime",
+                "iiprop": "url|size|mime|extmetadata",
                 "iiurlwidth": 1920
             },
             timeout=20
@@ -156,7 +166,7 @@ def _search_wikimedia_photo(query, used_ids):
             return None, None
         pages = (r.json().get("query") or {}).get("pages") or {}
         for page_id, page in pages.items():
-            pid = f"wiki_{page_id}"
+            pid = f"wiki_cc0_{page_id}"
             if pid in used_ids:
                 continue
             infos = page.get("imageinfo") or []
@@ -170,11 +180,15 @@ def _search_wikimedia_photo(query, used_ids):
             h = int(info.get("height") or 0)
             if w < 1000 or w < h:
                 continue
+            extmeta = info.get("extmetadata") or {}
+            lic = ((extmeta.get("LicenseShortName") or {}).get("value") or "").lower()
+            if not _is_license_unrestricted(lic):
+                continue
             url = info.get("thumburl") or info.get("url")
             if url:
                 return pid, url
     except Exception as e:
-        print(f"[WARN] Wikimedia search error for '{query}': {e}", flush=True)
+        print(f"[WARN] Wikimedia CC0 search error for '{query}': {e}", flush=True)
     return None, None
 
 
@@ -189,7 +203,6 @@ def _download_file(url, dest_path):
 
 
 def _stream_trim_video(url, dest_mp4, needed_duration):
-    """Download only the needed seconds via FFmpeg HTTP range streaming to save time & disk."""
     clip_len = max(2.5, round(float(needed_duration) + 0.5, 2))
     cmd = [
         "ffmpeg", "-y",
@@ -250,7 +263,7 @@ def _image_to_ken_burns_mp4(img_path, out_mp4, duration, scene_id):
 
 
 def collect_stock_footage(scene_plan):
-    update_status("collecting_footage", "প্রতিটি দৃশ্যের জন্য বাস্তব HD ফুটেজ ও ছবি সংগ্রহ করা হচ্ছে...", percent=54)
+    update_status("collecting_footage", "প্রতিটি দৃশ্যের জন্য প্রাসঙ্গিক ও ক্রেডিট-মুক্ত মিডিয়া সংগ্রহ করা হচ্ছে...", percent=54)
 
     pexels_key = os.environ.get("PEXELS_API_KEY", "").strip()
     pixabay_key = os.environ.get("PIXABAY_API_KEY", "").strip()
@@ -295,11 +308,11 @@ def collect_stock_footage(scene_plan):
                 if found_url:
                     media_kind = "photo"
                     break
-                found_id, found_url = _search_wikimedia_photo(q, used_ids)
+                found_id, found_url = _search_nasa_photo(q, used_ids)
                 if found_url:
                     media_kind = "photo"
                     break
-                found_id, found_url = _search_nasa_photo(q, used_ids)
+                found_id, found_url = _search_wikimedia_cc0_photo(q, used_ids)
                 if found_url:
                     media_kind = "photo"
                     break
@@ -330,7 +343,7 @@ def collect_stock_footage(scene_plan):
 
     update_status(
         "collecting_footage",
-        f"মিডিয়া সংগ্রহ সম্পন্ন ({video_count}টি HD ভিডিও, {photo_count}টি Ken Burns ছবি, {fallback_count}টি কাস্টম গ্রাফিক্স)।",
+        f"মিডিয়া সংগ্রহ সম্পন্ন ({video_count}টি HD ভিডিও, {photo_count}টি Ken Burns ছবি, {fallback_count}টি ইনফোগ্রাফিক)।",
         percent=64
     )
     return scene_plan

@@ -53,14 +53,14 @@ def _render_scene_clip(scene, out_clip, grade_filter):
 
     if footage_path and Path(footage_path).exists():
         if overlay_path and Path(overlay_path).exists():
-            ov_in = 0.25
-            ov_out = max(ov_in + 0.4, dur - 0.55)
+            ov_in = min(0.2, max(0.0, dur * 0.1))
+            ov_out = max(ov_in + 0.4, dur - 0.5)
             fc = (
                 f"[0:v]scale=1920:1080:force_original_aspect_ratio=increase,"
                 f"crop=1920:1080,fps=30,format=yuv420p,{grade_filter}[base];"
-                f"[1:v]format=rgba,fade=t=in:st={ov_in:.2f}:d=0.35:alpha=1,"
-                f"fade=t=out:st={ov_out:.2f}:d=0.35:alpha=1[ov];"
-                f"[base][ov]overlay=x=0:y='if(lt(t,0.6),-28*(1-(t/0.6)),0)':shortest=1,"
+                f"[1:v]format=rgba,fade=t=in:st={ov_in:.2f}:d=0.3:alpha=1,"
+                f"fade=t=out:st={ov_out:.2f}:d=0.3:alpha=1[ov];"
+                f"[base][ov]overlay=x=0:y='if(lt(t,0.5),-22*(1-(t/0.5)),0)':shortest=1,"
                 f"fade=t=in:st=0:d={fade_d:.3f},fade=t=out:st={fade_out_st:.3f}:d={fade_d:.3f},format=yuv420p[vout]"
             )
             run_ffmpeg([
@@ -101,7 +101,6 @@ def _render_scene_clip(scene, out_clip, grade_filter):
             pass
 
     elif graphic_video_path and Path(graphic_video_path).exists():
-        # Remotion pre-rendered animated 1080p 30fps MP4
         vf = (
             f"scale=1920:1080,fps=30,format=yuv420p,"
             f"fade=t=in:st=0:d={fade_d:.3f},fade=t=out:st={fade_out_st:.3f}:d={fade_d:.3f}"
@@ -177,7 +176,7 @@ def render_documentary(scene_plan, transcript_data, original_audio_path):
             pass
 
     srt_path = build_subtitles_srt(transcript_data)
-    burn_subs = os.environ.get("BURN_SUBTITLES", "true").lower() == "true"
+    burn_subs = os.environ.get("BURN_SUBTITLES", "false").lower() == "true"
     enable_music = os.environ.get("ENABLE_BG_MUSIC", "true").lower() == "true"
     duration = float(transcript_data["duration"])
 

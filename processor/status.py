@@ -28,22 +28,22 @@ STAGES = {
     "creating_scene_plan": {
         "label": "Creating Scene Plan",
         "percent": 44,
-        "message": "Gemini AI ডকুমেন্টারি দৃশ্য ও স্টোরিবোর্ড তৈরি করছে..."
+        "message": "AI ডিরেক্টর দৃশ্য ও ইনফোগ্রাফিক স্টোরিবোর্ড তৈরি করছে..."
     },
     "collecting_footage": {
         "label": "Collecting Footage",
         "percent": 58,
-        "message": "প্রতিটি দৃশ্যের জন্য বাস্তব HD স্টক ফুটেজ সংগ্রহ করা হচ্ছে..."
+        "message": "প্রতিটি দৃশ্যের জন্য বাস্তব HD ও ক্রেডিট-মুক্ত মিডিয়া সংগ্রহ করা হচ্ছে..."
     },
     "creating_graphics": {
         "label": "Creating Graphics",
         "percent": 72,
-        "message": "ইনফোগ্রাফিক্স, ম্যাপ ও মোশন গ্রাফিক্স তৈরি হচ্ছে..."
+        "message": "ইনফোগ্রাফিক্স, পিল কলআউট ও মোশন গ্রাফিক্স তৈরি হচ্ছে..."
     },
     "editing_video": {
         "label": "Editing Video",
         "percent": 85,
-        "message": "সিনেম্যাটিক ট্রানজিশন, কালার গ্রেডিং ও সাবটাইটেল বসানো হচ্ছে..."
+        "message": "সিনেম্যাটিক ট্রানজিশন, কালার গ্রেডিং ও দৃশ্য সাজানো হচ্ছে..."
     },
     "rendering_final_video": {
         "label": "Rendering Final Video",
@@ -113,6 +113,34 @@ def upload_asset_to_release(file_path, asset_name=None, content_type="applicatio
         r = requests.post(upload_url, headers=headers, data=f, timeout=600)
         r.raise_for_status()
     return True
+
+
+def _download_asset_by_name(asset_name, dest_path):
+    release = get_release(force_refresh=True)
+    if not release:
+        return None
+    asset = next((a for a in release.get("assets", []) if a.get("name") == asset_name), None)
+    if not asset:
+        return None
+    headers = _gh_headers(accept="application/octet-stream")
+    with requests.get(asset["url"], headers=headers, stream=True, timeout=300) as r:
+        r.raise_for_status()
+        with open(dest_path, "wb") as f:
+            for chunk in r.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    f.write(chunk)
+    return dest_path
+
+
+def download_custom_srt():
+    WORK.mkdir(parents=True, exist_ok=True)
+    local_srt = WORK / "custom_input.srt"
+    if local_srt.exists() and local_srt.stat().st_size > 0:
+        return local_srt
+    downloaded = _download_asset_by_name("custom_input.srt", local_srt)
+    if downloaded and downloaded.exists() and downloaded.stat().st_size > 0:
+        return downloaded
+    return None
 
 
 def download_original_audio():
