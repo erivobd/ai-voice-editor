@@ -9,8 +9,7 @@ from status import update_status, fail_job, upload_asset_to_release
 from transcribe import run_transcription
 from director import create_scene_plan
 from footage import collect_stock_footage
-from graphics import create_motion_graphics
-from video_render import render_documentary
+from remotion_render import render_remotion_documentary
 from quality_control import validate_final_video
 
 WORK = Path(os.environ.get("WORK_DIR", "/tmp/doc_job"))
@@ -32,11 +31,11 @@ def main():
         scene_plan = collect_stock_footage(scene_plan)
 
         current_stage = "creating_graphics"
-        scene_plan = create_motion_graphics(scene_plan)
+        update_status("creating_graphics", "Remotion-এর জন্য বিষয়ভিত্তিক মোশন গ্রাফিক্স ও দৃশ্য প্রস্তুত হচ্ছে...", percent=70)
         upload_asset_to_release(WORK / "scene_plan.json", "scene_plan.json", "application/json")
 
         current_stage = "rendering_final_video"
-        final_mp4, srt_path = render_documentary(scene_plan, transcript_data, original_audio_path)
+        final_mp4, srt_path = render_remotion_documentary(scene_plan, transcript_data, original_audio_path)
 
         current_stage = "quality_control"
         update_status("quality_control", "স্বয়ংক্রিয় Quality Control: 1080p, 30 FPS, অডিও ও সময় যাচাই হচ্ছে...", percent=95)
