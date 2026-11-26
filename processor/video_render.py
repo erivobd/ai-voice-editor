@@ -47,6 +47,7 @@ def _render_scene_clip(scene, out_clip, grade_filter):
     fade_out_st = max(0.0, dur - fade_d)
 
     footage_path = scene.get("footage_path")
+    graphic_video_path = scene.get("graphic_video_path")
     graphic_path = scene.get("graphic_path")
     overlay_path = scene.get("overlay_path")
 
@@ -59,7 +60,7 @@ def _render_scene_clip(scene, out_clip, grade_filter):
                 f"crop=1920:1080,fps=30,format=yuv420p,{grade_filter}[base];"
                 f"[1:v]format=rgba,fade=t=in:st={ov_in:.2f}:d=0.35:alpha=1,"
                 f"fade=t=out:st={ov_out:.2f}:d=0.35:alpha=1[ov];"
-                f"[base][ov]overlay=0:0:shortest=1,"
+                f"[base][ov]overlay=x=0:y='if(lt(t,0.6),-28*(1-(t/0.6)),0)':shortest=1,"
                 f"fade=t=in:st=0:d={fade_d:.3f},fade=t=out:st={fade_out_st:.3f}:d={fade_d:.3f},format=yuv420p[vout]"
             )
             run_ffmpeg([
@@ -98,6 +99,28 @@ def _render_scene_clip(scene, out_clip, grade_filter):
             Path(footage_path).unlink()
         except OSError:
             pass
+
+    elif graphic_video_path and Path(graphic_video_path).exists():
+        # Remotion pre-rendered animated 1080p 30fps MP4
+        vf = (
+            f"scale=1920:1080,fps=30,format=yuv420p,"
+            f"fade=t=in:st=0:d={fade_d:.3f},fade=t=out:st={fade_out_st:.3f}:d={fade_d:.3f}"
+        )
+        run_ffmpeg([
+            "ffmpeg", "-y",
+            "-i", str(graphic_video_path),
+            "-t", f"{dur:.3f}",
+            "-an",
+            "-vf", vf,
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+            "-pix_fmt", "yuv420p",
+            str(out_clip)
+        ])
+        try:
+            Path(graphic_video_path).unlink()
+        except OSError:
+            pass
+
     elif graphic_path and Path(graphic_path).exists():
         frames = max(30, int(round(dur * 30)))
         vf = (

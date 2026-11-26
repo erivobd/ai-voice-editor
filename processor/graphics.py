@@ -1,4 +1,5 @@
 import html
+import json
 import os
 import re
 import shutil
@@ -8,6 +9,8 @@ from PIL import Image, ImageDraw
 from status import update_status
 
 WORK = Path(os.environ.get("WORK_DIR", "/tmp/doc_job"))
+REPO_ROOT = Path(__file__).resolve().parent.parent
+REMOTION_SCRIPT = REPO_ROOT / "remotion" / "render_scenes.mjs"
 FONT_STACK = "Hind Siliguri, Noto Sans Bengali, Noto Sans, sans-serif"
 
 PALETTES = {
@@ -62,7 +65,6 @@ def _render_svg_to_png(svg_content, png_path, transparent=False):
 
 
 def _build_stock_overlay_svg(scene, palette):
-    """Sample-style transparent dark frosted glass callout card or top headline over stock footage."""
     g = scene.get("graphic") or {}
     heading = (g.get("heading") or scene.get("overlay_headline") or "").strip()
     subheading = (g.get("subheading") or scene.get("overlay_subtext") or "").strip()
@@ -72,7 +74,6 @@ def _build_stock_overlay_svg(scene, palette):
     accent = "#ef4444" if scene.get("accent") == "red" else palette["accent"]
     sid = int(scene.get("scene_id", 1))
 
-    # Alternate between top headline banner and top-left frosted callout card (keeps bottom free for subtitles)
     if sid % 2 == 1:
         sub_svg = ""
         if subheading:
@@ -103,157 +104,104 @@ def _build_stock_overlay_svg(scene, palette):
 </svg>"""
 
 
-def _build_svg_card(scene, palette):
+def _build_fallback_svg_card(scene, palette):
     g = scene.get("graphic") or {}
-    kind = g.get("kind", "title_card")
     heading = g.get("heading") or scene.get("overlay_headline") or "ডকুমেন্টারি তথ্য"
     subheading = g.get("subheading") or scene.get("overlay_subtext") or ""
-    items = g.get("items") or []
-
     accent = "#ef4444" if scene.get("accent") == "red" else palette["accent"]
-    accent2 = palette.get("accent2", "#38bdf8")
-
     h_lines = _wrap_text(heading, 28)
     sub_lines = _wrap_text(subheading, 48)
 
-    body_svg = []
-    if kind == "timeline" and items:
-        body_svg.append(
-            '<rect x="160" y="560" width="1600" height="330" rx="24" fill="#0f172a" fill-opacity="0.82" '
-            'stroke="#ffffff" stroke-opacity="0.14" stroke-width="2"/>'
-        )
-        body_svg.append(f'<line x1="260" y1="700" x2="1660" y2="700" stroke="{accent}" stroke-width="6" opacity="0.85"/>')
-        step = 1320 // max(1, len(items[:4]) - 1) if len(items[:4]) > 1 else 0
-        for i, item in enumerate(items[:4]):
-            cx = 300 + i * step if len(items[:4]) > 1 else 960
-            body_svg.append(f'<circle cx="{cx}" cy="700" r="18" fill="{accent}"/>')
-            body_svg.append(f'<circle cx="{cx}" cy="700" r="32" fill="none" stroke="{accent}" stroke-width="3" opacity="0.4"/>')
-            body_svg.append(
-                f'<text x="{cx}" y="785" text-anchor="middle" fill="{palette["text"]}" '
-                f'font-family="{FONT_STACK}" font-size="32" font-weight="600">{_esc(str(item)[:26])}</text>'
-            )
-    elif kind == "map_marker":
-        body_svg.append(f'<circle cx="1440" cy="540" r="245" fill="none" stroke="{accent2}" stroke-width="2" opacity="0.25"/>')
-        body_svg.append(f'<circle cx="1440" cy="540" r="155" fill="none" stroke="{accent}" stroke-width="2.5" opacity="0.45"/>')
-        body_svg.append(f'<circle cx="1440" cy="540" r="68" fill="{accent}" opacity="0.22"/>')
-        body_svg.append(f'<circle cx="1440" cy="540" r="18" fill="{accent}"/>')
-        body_svg.append(f'<line x1="1150" y1="540" x2="1730" y2="540" stroke="{accent2}" stroke-width="2" opacity="0.2"/>')
-        body_svg.append(f'<line x1="1440" y1="250" x2="1440" y2="830" stroke="{accent2}" stroke-width="2" opacity="0.2"/>')
-        if items:
-            body_svg.append(
-                '<rect x="160" y="620" width="900" height="260" rx="20" fill="#0f172a" fill-opacity="0.82" '
-                'stroke="#ffffff" stroke-opacity="0.14" stroke-width="2"/>'
-            )
-            body_svg.append(f'<rect x="160" y="644" width="10" height="212" rx="5" fill="{accent}"/>')
-            for i, it in enumerate(items[:3]):
-                body_svg.append(
-                    f'<text x="210" y="{695 + i * 66}" fill="{palette["text"]}" '
-                    f'font-family="{FONT_STACK}" font-size="34" font-weight="600">● {_esc(it)}</text>'
-                )
-    elif kind == "stat_chart" and items:
-        parsed = []
-        for it in items[:4]:
-            m = re.search(r"([0-9]+(?:\.[0-9]+)?)", str(it))
-            val = float(m.group(1)) if m else float((len(parsed) + 1) * 25)
-            label = re.sub(r"[:\-]?\s*[0-9]+(?:\.[0-9]+)?%?", "", str(it)).strip() or str(it)
-            parsed.append((label[:30], val))
-        max_val = max(p[1] for p in parsed) or 1.0
-        card_h = 80 + len(parsed) * 102
-        body_svg.append(
-            f'<rect x="160" y="530" width="1600" height="{card_h}" rx="24" fill="#0f172a" fill-opacity="0.86" '
-            'stroke="#ffffff" stroke-opacity="0.16" stroke-width="2"/>'
-        )
-        body_svg.append(f'<rect x="160" y="556" width="10" height="{card_h - 52}" rx="5" fill="{accent}"/>')
-        for i, (lbl, val) in enumerate(parsed):
-            y = 595 + i * 96
-            bar_w = max(140, int((val / max_val) * 1020))
-            bar_col = accent if i == len(parsed) - 1 else accent2
-            body_svg.append(
-                f'<text x="215" y="{y}" fill="{palette["text"]}" '
-                f'font-family="{FONT_STACK}" font-size="32" font-weight="600">{_esc(lbl)}</text>'
-            )
-            body_svg.append(f'<rect x="215" y="{y + 18}" width="1180" height="26" rx="13" fill="#ffffff" opacity="0.12"/>')
-            body_svg.append(f'<rect x="215" y="{y + 18}" width="{bar_w}" height="26" rx="13" fill="{bar_col}"/>')
-            body_svg.append(
-                f'<text x="{215 + bar_w + 26}" y="{y + 42}" fill="{bar_col}" '
-                f'font-family="{FONT_STACK}" font-size="32" font-weight="700">{val:g}</text>'
-            )
-    else:
-        if items:
-            card_h = 70 + len(items[:3]) * 70
-            body_svg.append(
-                f'<rect x="160" y="630" width="1360" height="{card_h}" rx="22" fill="#0f172a" fill-opacity="0.84" '
-                'stroke="#ffffff" stroke-opacity="0.15" stroke-width="2"/>'
-            )
-            body_svg.append(f'<rect x="160" y="652" width="10" height="{card_h - 44}" rx="5" fill="{accent}"/>')
-            for i, it in enumerate(items[:3]):
-                body_svg.append(
-                    f'<text x="210" y="{698 + i * 66}" fill="{palette["text"]}" '
-                    f'font-family="{FONT_STACK}" font-size="34" font-weight="600">— {_esc(it)}</text>'
-                )
-
-    heading_svg = []
-    for i, line in enumerate(h_lines):
-        heading_svg.append(
-            f'<text x="160" y="{310 + i * 94}" fill="{palette["text"]}" '
-            f'font-family="{FONT_STACK}" font-size="76" font-weight="700">{_esc(line)}</text>'
-        )
-
-    sub_y = 310 + len(h_lines) * 94 + 22
-    sub_svg = []
-    for i, line in enumerate(sub_lines):
-        sub_svg.append(
-            f'<text x="160" y="{sub_y + i * 54}" fill="{accent}" '
-            f'font-family="{FONT_STACK}" font-size="38" font-weight="600">{_esc(line)}</text>'
-        )
-
+    heading_svg = [
+        f'<text x="160" y="{340 + i * 94}" fill="{palette["text"]}" font-family="{FONT_STACK}" font-size="76" font-weight="700">{_esc(line)}</text>'
+        for i, line in enumerate(h_lines)
+    ]
+    sub_y = 340 + len(h_lines) * 94 + 24
+    sub_svg = [
+        f'<text x="160" y="{sub_y + i * 54}" fill="{accent}" font-family="{FONT_STACK}" font-size="38" font-weight="600">{_esc(line)}</text>'
+        for i, line in enumerate(sub_lines)
+    ]
     return f"""<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
-  <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="{palette["bg1"]}"/>
-      <stop offset="100%" stop-color="{palette["bg2"]}"/>
-    </linearGradient>
-    <pattern id="grid" width="64" height="64" patternUnits="userSpaceOnUse">
-      <path d="M 64 0 L 0 0 0 64" fill="none" stroke="#38bdf8" stroke-width="1" opacity="0.08"/>
-    </pattern>
-  </defs>
-  <rect width="1920" height="1080" fill="url(#bg)"/>
-  <rect width="1920" height="1080" fill="url(#grid)"/>
-  <rect x="44" y="44" width="1832" height="992" rx="22" fill="none" stroke="#38bdf8" stroke-opacity="0.18" stroke-width="2"/>
-  <rect x="160" y="195" width="120" height="8" rx="4" fill="{accent}"/>
-  <text x="160" y="168" fill="{accent2}" font-family="{FONT_STACK}" font-size="24" letter-spacing="4" font-weight="700">DOCUMENTARY ANALYSIS</text>
+  <rect width="1920" height="1080" fill="{palette["bg1"]}"/>
+  <rect x="160" y="210" width="120" height="8" rx="4" fill="{accent}"/>
   {"".join(heading_svg)}
   {"".join(sub_svg)}
-  {"".join(body_svg)}
 </svg>"""
 
 
 def create_motion_graphics(scene_plan):
-    update_status("creating_graphics", "ইনফোগ্রাফিক্স, ম্যাপ ও মোশন গ্রাফিক্স তৈরি হচ্ছে...", percent=70)
+    update_status("creating_graphics", "Remotion অ্যানিমেটেড মোশন গ্রাফিক্স ও ওভারলে তৈরি হচ্ছে...", percent=70)
 
     gfx_dir = WORK / "graphics"
     gfx_dir.mkdir(parents=True, exist_ok=True)
-    palette = PALETTES.get(scene_plan.get("color_grade", "cinematic_teal"), PALETTES["cinematic_teal"])
+    color_grade = scene_plan.get("color_grade", "cinematic_teal")
+    palette = PALETTES.get(color_grade, PALETTES["cinematic_teal"])
 
-    created = 0
+    remotion_jobs = []
+    job_scene_map = {}
+    overlay_count = 0
+
     for scene in scene_plan.get("scenes", []):
+        sid = int(scene["scene_id"])
+        scene["graphic_video_path"] = None
+        scene["graphic_path"] = None
+        scene["overlay_path"] = None
+
         if scene.get("visual_type") == "motion_graphic" or not scene.get("footage_path"):
-            png_path = gfx_dir / f"graphic_{scene['scene_id']:03d}.png"
-            svg = _build_svg_card(scene, palette)
-            _render_svg_to_png(svg, png_path, transparent=False)
-            scene["graphic_path"] = str(png_path)
-            scene["overlay_path"] = None
-            created += 1
+            g = scene.get("graphic") or {}
+            out_mp4 = gfx_dir / f"remotion_{sid:03d}.mp4"
+            dur = max(1.5, float(scene.get("duration") or (float(scene.get("end", 5.0)) - float(scene.get("start", 0.0)))))
+            remotion_jobs.append({
+                "scene_id": sid,
+                "kind": g.get("kind", "title_card"),
+                "heading": g.get("heading") or scene.get("overlay_headline") or f"অধ্যায় {sid}",
+                "subheading": g.get("subheading") or scene.get("overlay_subtext") or "",
+                "items": g.get("items") or [],
+                "accent": scene.get("accent", "gold"),
+                "color_grade": color_grade,
+                "duration": round(dur, 2),
+                "output_path": str(out_mp4),
+            })
+            job_scene_map[sid] = (scene, out_mp4)
         else:
-            scene["graphic_path"] = None
             ov_svg = _build_stock_overlay_svg(scene, palette)
             if ov_svg:
-                ov_path = gfx_dir / f"overlay_{scene['scene_id']:03d}.png"
+                ov_path = gfx_dir / f"overlay_{sid:03d}.png"
                 _render_svg_to_png(ov_svg, ov_path, transparent=True)
                 scene["overlay_path"] = str(ov_path)
-                created += 1
-            else:
-                scene["overlay_path"] = None
+                overlay_count += 1
 
-    update_status("creating_graphics", f"{created}টি ডকুমেন্টারি গ্রাফিক্স ও ওভারলে তৈরি সম্পন্ন।", percent=76)
+    remotion_ok = 0
+    if remotion_jobs and REMOTION_SCRIPT.exists() and shutil.which("node"):
+        jobs_json = gfx_dir / "remotion_jobs.json"
+        jobs_json.write_text(json.dumps(remotion_jobs, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"[Graphics] Launching Remotion for {len(remotion_jobs)} animated scenes...", flush=True)
+        proc = subprocess.run(
+            ["node", str(REMOTION_SCRIPT), str(jobs_json)],
+            cwd=str(REPO_ROOT / "remotion"),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        print(proc.stdout[-3000:], flush=True)
+        if proc.returncode != 0:
+            print(f"[WARN] Remotion exited with code {proc.returncode}; falling back for unrendered scenes.", flush=True)
+
+    fallback_count = 0
+    for sid, (scene, out_mp4) in job_scene_map.items():
+        if out_mp4.exists() and out_mp4.stat().st_size > 15_000:
+            scene["graphic_video_path"] = str(out_mp4)
+            remotion_ok += 1
+        else:
+            png_path = gfx_dir / f"graphic_{sid:03d}.png"
+            svg = _build_fallback_svg_card(scene, palette)
+            _render_svg_to_png(svg, png_path, transparent=False)
+            scene["graphic_path"] = str(png_path)
+            fallback_count += 1
+
+    update_status(
+        "creating_graphics",
+        f"{remotion_ok}টি Remotion অ্যানিমেটেড গ্রাফিক্স ও {overlay_count}টি ওভারলে তৈরি সম্পন্ন।",
+        percent=76,
+    )
     return scene_plan
