@@ -1,6 +1,6 @@
 import React from "react";
 import { Composition } from "remotion";
-import { DocGraphic } from "./DocGraphic";
+import { DocGraphic } from "./DocGraphic.jsx";
 
 export const RemotionRoot = () => {
   return (
