@@ -1,28 +1,13 @@
-# AI Documentary Video Maker
+# AI Documentary Video Maker (FFmpeg + Pillow v2)
 
-নিজের রেকর্ড ও এডিট করা রেডি ভয়েসওভার আপলোড করলেই AI স্বয়ংক্রিয়ভাবে ভয়েস বুঝে, দৃশ্য পরিকল্পনা করে, বাস্তব HD স্টক ফুটেজ, Ken Burns ছবি ও মোশন গ্রাফিক্স যুক্ত করে সম্পূর্ণ **1080p সিনেমাটিক ডকুমেন্টারি ভিডিও (MP4)** তৈরি করে দেয়।
+## প্রধান আপডেটসমূহ
+- **Remotion সম্পূর্ণ বাদ:** পুরো ভিডিও রেন্ডারিং ও ইনফোগ্রাফিক্স এখন **FFmpeg + Pillow** দিয়ে তৈরি হয়।
+- **অধ্যায় ট্যাগ অপসারণ ও বড় পিল:** ভিডিওতে কোনো "অধ্যায়" লেখা আসবে না এবং ইনফো পিল ও ব্যাজগুলো ওভারল্যাপ ছাড়াই বড় ও স্পষ্টভাবে দেখাবে।
+- **কাস্টম SRT ফাইল / টেক্সট ও বাংলা Whisper:** কাস্টম `.srt` ফাইল আপলোড বা সরাসরি টেক্সট পেস্ট করলে Whisper স্কিপ হবে; না দিলে `AUDIO_LANGUAGE=bn` লক করে Whisper চলবে এবং হিন্দি/দেবনাগরী শব্দ ফিল্টার হবে।
+- **ক্রেডিট-মুক্ত মিডিয়া ফিল্টার:** শর্তহীন ফ্রি / CC0 / Public Domain এবং অনুমোদিত স্টক মিডিয়াই সংগ্রহ করা হয়।
 
-## মূল বৈশিষ্ট্য
-- **মূল ভয়েস ১০০% অক্ষত:** কোনো পিচ, স্পিড বা টোন পরিবর্তন করা হয় না।
-- **Hybrid AI ইঞ্জিন:** `faster-whisper` দিয়ে নিখুঁত টাইমস্ট্যাম্প + **Gemini AI** দিয়ে ডকুমেন্টারি ডিরেকশন ও স্টোরিবোর্ড।
-- **৫-স্তরের মিডিয়া ও গ্রাফিক্স ইঞ্জিন (Pexels ছাড়াই চলে):**
-  1. **Pixabay HD Video** (প্রাথমিক ভিডিও সোর্স)
-  2. **Pixabay High-Res Photos** (সিনেম্যাটিক Ken Burns জুম অ্যানিমেশনসহ)
-  3. **Wikimedia Commons** (ইতিহাস, প্রকৃতি ও বিজ্ঞানের ছবি — কোনো API Key লাগে না)
-  4. **NASA Image Library** (মহাকাশ ও বিজ্ঞানের ছবি — কোনো API Key লাগে না)
-  5. **কাস্টম বাংলা মোশন গ্রাফিক্স** (`librsvg` + `Noto Sans Bengali`) — কোনো ক্লিপ কখনো রিপিট হয় না।
-- **নিরাপদ মিউজিক:** ১০০% কপিরাইট-মুক্ত ব্যাকগ্রাউন্ড অ্যাম্বিয়েন্ট মিউজিক।
-- **মোবাইল-ফ্রেন্ডলি UI:** PIN লগইন, ৯-ধাপের লাইভ প্রগ্রেস বার, এরর রিপোর্টিং, ইন-ব্রাউজার ভিডিও প্রিভিউ এবং MP4 ডাউনলোড।
-
-## GitHub Secrets সেটআপ (Settings → Secrets and variables → Actions)
-1. `GEMINI_API_KEY` *(ইতিমধ্যেই যুক্ত আছে)*
-2. `PIXABAY_API_KEY` *(ফ্রি অ্যাকাউন্ট থেকে নিন: pixabay.com/api/docs)*
-3. `PEXELS_API_KEY` *(সম্পূর্ণ ঐচ্ছিক — না দিলেও কোনো সমস্যা নেই)*
-
-## Render Environment Variables
-- `GITHUB_TOKEN`: Fine-grained Personal Access Token (Contents: Read & Write, Actions: Read & Write)
-- `GITHUB_OWNER`: আপনার GitHub ইউজারনেম
-- `GITHUB_REPO`: প্রাইভেট রিপোজিটরির নাম
-- `GITHUB_WORKFLOW_FILE`: `documentary-maker.yml`
-- `GITHUB_BRANCH`: `main`
-- `APP_ACCESS_PIN`: আপনার পছন্দের সিকিউরিটি PIN
+## Android ফোন থেকে GitHub ও Render-এ ডিপ্লয় গাইড
+1. এই ZIP ফাইলটি ফোনের ফাইল ম্যানেজারে আনজিপ করুন।
+2. GitHub-এ আপনার রিপোজিটরিতে সব ফাইল আপলোড বা কমিট করুন (খেয়াল রাখবেন `.github/workflows/documentary-maker.yml` যেন সঠিক ফোল্ডারে থাকে)।
+3. GitHub Repository **Settings > Secrets and variables > Actions**-এ `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `PEXELS_API_KEY`, `PIXABAY_API_KEY` যুক্ত করুন।
+4. Render Web Service-এ Environment Variables হিসেবে `APP_ACCESS_PIN`, `GITHUB_TOKEN`, `GITHUB_OWNER`, `GITHUB_REPO`, `GITHUB_WORKFLOW_FILE=documentary-maker.yml`, `GITHUB_BRANCH=main` সেট করে ডিপ্লয় করুন।
