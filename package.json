@@ -1,16 +1,14 @@
 {
-  "name": "ai-documentary-video-maker",
+  "name": "doc-remotion-graphics",
   "version": "1.0.0",
-  "description": "Web-based AI Documentary Video Maker powered by Gemini, Faster-Whisper, Pexels/Pixabay, and FFmpeg",
-  "main": "server.js",
-  "engines": {
-    "node": ">=20.0.0"
-  },
-  "scripts": {
-    "start": "node server.js"
-  },
+  "private": true,
+  "type": "module",
   "dependencies": {
-    "express": "^4.21.2",
-    "multer": "^1.4.5-lts.1"
+    "@remotion/bundler": "4.0.240",
+    "@remotion/cli": "4.0.240",
+    "@remotion/renderer": "4.0.240",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "remotion": "4.0.240"
   }
 }
