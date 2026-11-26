@@ -12,18 +12,9 @@ except ImportError:
         pass
 
 
-OPENROUTER_MODELS = [
-    "google/gemini-2.5-flash:free",
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "deepseek/deepseek-r1:free",
-    "qwen/qwen-2.5-72b-instruct:free",
-    "mistralai/mistral-small-3.1-24b-instruct:free",
-    "google/gemma-3-27b-it:free",
-    "meta-llama/llama-3.2-3b-instruct:free",
-    "qwen/qwen-2.5-coder-32b-instruct:free",
-    "nousresearch/hermes-3-llama-3.1-405b:free",
-    "openrouter/free",
-]
+# Dynamic OpenRouter free-model router. It selects from currently available
+# free endpoints rather than relying on model IDs that may be retired.
+OPENROUTER_MODELS = ["openrouter/free"]
 
 VALID_GRADES = {"cinematic_teal", "warm_history", "cool_science", "neutral_doc"}
 VALID_GRAPHIC_KINDS = {"title_card", "stat_chart", "timeline", "map_marker"}
@@ -76,35 +67,50 @@ def _extract_json(text: str) -> Dict[str, Any]:
     return json.loads(text)
 
 
-def _build_prompt(transcript_text: str, total_duration: float, title: str = "") -> str:
+def _build_prompt(
+    transcript_text: str,
+    total_duration: float,
+    title: str = "",
+    window_start: float = 0.0,
+    window_end: Optional[float] = None,
+) -> str:
+    window_end = float(total_duration if window_end is None else window_end)
+    window_start = max(0.0, float(window_start))
+    window_duration = max(0.0, window_end - window_start)
     title_hint = f"Documentary Title: {title}\n" if title else ""
     return f"""
 You are an elite documentary video director.
-{title_hint}Create a tightly synchronized, visually accurate scene plan covering the ENTIRE {total_duration:.1f}s duration of this documentary from 0.0s to {total_duration:.1f}s:
+{title_hint}Create a tightly synchronized scene plan for the narration window from {window_start:.1f}s to {window_end:.1f}s. The complete documentary duration is {total_duration:.1f}s.
 
-TRANSCRIPT:
-{transcript_text[:12000]}
+TRANSCRIPT FOR THIS WINDOW (use every timestamped line; do not invent events):
+{transcript_text}
 
 STRICT VISUAL & TIMING RULES:
-1. FULL DURATION COVERAGE (CRITICAL):
-   - You MUST generate enough scenes to cover the ENTIRE timeline from 0.0s all the way to {total_duration:.1f}s with ZERO gaps and ZERO early cutoff.
-   - Do NOT stop at the last transcript line if audio continues; continue matching thematic scenes up to {total_duration:.1f}s.
+1. COVER THIS WINDOW COMPLETELY:
+   - Cover the absolute timeline from {window_start:.1f}s through {window_end:.1f}s with no intentional gaps.
+   - Scene start/end values are ABSOLUTE timestamps on the original narration timeline, not offsets from this window.
+   - Never retime, compress, stretch, or evenly redistribute timestamps.
+   - Place each visual change where its spoken subject begins, using timestamped transcript lines as authority.
 2. STRICT VISUAL-TRANSCRIPT LOCK:
-   - Every single scene's "search_queries" and "graphic" MUST directly match the exact spoken subject, noun, place, or concept in the transcript at that exact timestamp.
-   - Example: If the narrator says "রাতের আকাশের দিকে তাকালে আমরা অসংখ্য তারা দেখতে পাই", the query MUST be "night sky full of stars milky way" — NEVER ocean, whirlpool, or unrelated nature!
+   - Every scene's search_queries and graphic MUST directly match the exact spoken subject, noun, place, or concept at that timestamp.
+   - Example: If the narrator says "রাতের আকাশের দিকে তাকালে আমরা অসংখ্য তারা দেখতে পাই", the query MUST be "night sky full of stars milky way" — NEVER ocean, whirlpool, or unrelated nature.
    - NEVER use generic engineering blueprints, circuit boards, or unrelated stock unless the transcript explicitly discusses engineering or code.
 3. COHESIVE SCENE DURATION:
-   - Keep each scene 3.5s to 7.0s (unless total_duration < 6.5s, in which case make 1 cohesive scene covering 0.0s to {total_duration:.1f}s).
+   - Keep each scene 3.5s to 7.0s. Only use one scene if this window is shorter than 6.5s.
    - Only split into rapid cuts (1.8s–2.8s) if the narrator explicitly enumerates 3+ separate objects in a list.
 4. NEVER repeat the exact same search query across scenes. Provide 2 specific English visual queries per stock_footage scene.
-5. Alternate with "motion_graphic" scenes (stat_chart, timeline, map_marker, title_card) on longer videos so no more than 2 stock_footage scenes appear back-to-back.
-6. BENGALI ONLY FOR OVERLAYS & NO CHAPTER LABELS:
-   - Every scene MUST include a "graphic" object with Bengali "heading" (<= 30 chars) and 2-3 punchy Bengali "items" (<= 22 chars each) so animated badges & pills always appear on screen.
-   - NEVER write the word "অধ্যায়" or chapter numbers anywhere.
-   - Zero Hindi/Devanagari characters.
-7. Choose a documentary color grade appropriate to the overall story: "cinematic_teal", "warm_history", "cool_science", "neutral_doc".
-8. For each scene, choose a subtle camera movement: "slow_zoom_in", "slow_zoom_out", "pan_left", or "pan_right". Avoid aggressive movement.
-9. Scene-specific visual treatment must remain restrained and realistic; do not apply flashy effects to every scene.
+5. MODERN YOUTUBE DOCUMENTARY EDITING:
+   - Stock footage is the MAIN visual layer. Aim for about 75-85% relevant footage and 15-25% purposeful explainer graphics, not alternating slides.
+   - Never force a graphic just because two footage scenes appeared. Use full-screen motion_graphic only for a real explanation: a location, timeline, process, comparison, or meaningful statistic.
+   - Use editorial overlays on footage sparingly (roughly one in every 3-4 scenes). Do not put a title, badges, or pills on every shot.
+   - Prefer visual variety: wide establishing shots, close details, aerials, archival-style images, maps, and short punch-in shots that match the narration.
+6. BENGALI ONLY FOR ON-SCREEN WORDS:
+   - Keep on-screen wording concise and factual. Do not invent statistics, dates, locations, or claims absent from the transcript.
+   - Use a heading and 1-3 supporting labels only when they add explanatory value.
+   - NEVER write the word "অধ্যায়" or chapter numbers anywhere. Zero Hindi/Devanagari characters.
+7. Choose a documentary color grade: cinematic_teal, warm_history, cool_science, or neutral_doc.
+8. Choose subtle camera movement: slow_zoom_in, slow_zoom_out, pan_left, or pan_right.
+9. Use clean editorial cuts by default; reserve transitions and graphic emphasis for story beats.
 
 Return ONLY valid JSON with this schema:
 {{
@@ -113,8 +119,8 @@ Return ONLY valid JSON with this schema:
   "scenes": [
     {{
       "scene_id": 1,
-      "start": 0.0,
-      "end": 5.5,
+      "start": {window_start:.1f},
+      "end": {min(window_start + 5.5, window_end):.1f},
       "visual_type": "stock_footage",
       "rapid_cut": false,
       "search_queries": ["night sky full of stars milky way", "starry night sky cosmos timelapse"],
@@ -141,25 +147,9 @@ def _call_openrouter(prompt: str, api_key: str) -> Dict[str, Any]:
         "HTTP-Referer": "https://github.com",
         "X-Title": "Documentary Video Maker",
     }
-    payload = {
-        "models": OPENROUTER_MODELS[:3],
-        "messages": [
-            {"role": "system", "content": "Return ONLY valid JSON. No markdown prose."},
-            {"role": "user", "content": prompt},
-        ],
-        "temperature": 0.3,
-    }
-    req = urlrequest.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
-    try:
-        with urlrequest.urlopen(req, timeout=75) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
-            content = body["choices"][0]["message"]["content"]
-            return _extract_json(content)
-    except (HTTPError, URLError, KeyError, IndexError, ValueError, json.JSONDecodeError):
-        pass
-
-    for model_name in OPENROUTER_MODELS[3:]:
-        single_payload = {
+    last_error = None
+    for model_name in OPENROUTER_MODELS:
+        payload = {
             "model": model_name,
             "messages": [
                 {"role": "system", "content": "Return ONLY valid JSON. No markdown prose."},
@@ -167,25 +157,23 @@ def _call_openrouter(prompt: str, api_key: str) -> Dict[str, Any]:
             ],
             "temperature": 0.3,
         }
-        req = urlrequest.Request(
-            url, data=json.dumps(single_payload).encode("utf-8"), headers=headers, method="POST"
-        )
+        req = urlrequest.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
         try:
-            with urlrequest.urlopen(req, timeout=75) as resp:
+            with urlrequest.urlopen(req, timeout=90) as resp:
                 body = json.loads(resp.read().decode("utf-8"))
                 content = body["choices"][0]["message"]["content"]
                 return _extract_json(content)
-        except Exception:
+        except Exception as exc:
+            last_error = exc
             continue
-
-    raise RuntimeError("All OpenRouter fallback models failed")
+    raise RuntimeError(f"OpenRouter free-model router failed: {last_error}")
 
 
 def _call_groq(prompt: str, api_key: str) -> Dict[str, Any]:
     from groq import Groq
 
     client = Groq(api_key=api_key)
-    models = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3-70b-versatile"]
+    models = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]
     last_err = None
     for m in models:
         try:
@@ -208,7 +196,7 @@ def _call_gemini(prompt: str, api_key: str) -> Dict[str, Any]:
     from google import genai
 
     client = genai.Client(api_key=api_key)
-    models = ["gemini-2.5-flash", "gemini-2.0-flash"]
+    models = ["gemini-2.5-flash", "gemini-2.5-flash-lite"]
     last_err = None
     for m in models:
         try:
@@ -318,26 +306,32 @@ def _enforce_variety_and_pacing(
         derived = _derive_topic_from_transcript(fallback_full, 0, title=title)
         first_raw = raw_scenes[0] if raw_scenes else {}
         raw_qs = first_raw.get("search_queries") if isinstance(first_raw.get("search_queries"), list) else []
-        queries = [derived["query"]]
+        queries = []
         for q in raw_qs:
             qs = str(q or "").strip()
             if qs and qs.lower() != derived["query"].lower():
                 queries.append(qs)
                 break
+        fallback_type = first_raw.get("visual_type", "motion_graphic") if first_raw else "motion_graphic"
+        if fallback_type not in ("stock_footage", "motion_graphic"):
+            fallback_type = "motion_graphic"
+        if fallback_type == "stock_footage" and not queries:
+            queries = [derived["query"]]
         graphic = _normalize_graphic(first_raw, 0, transcript_text=fallback_full, title=title)
         return [{
             "scene_id": 1,
             "start": 0.0,
             "end": round(total_duration, 2),
             "duration": round(total_duration, 2),
-            "visual_type": "stock_footage",
-            "type": "stock_footage",
+            "visual_type": fallback_type,
+            "type": fallback_type,
             "rapid_cut": False,
             "search_queries": queries[:2],
-            "search_query": queries[0],
+            "search_query": queries[0] if queries else "",
             "accent": "red",
             "motion_effect": "slow_zoom_in",
             "graphic": graphic,
+            "show_overlay": bool(first_raw.get("show_overlay", False)),
             "overlay_headline": graphic["heading"],
             "overlay_subtext": graphic["subheading"],
         }]
@@ -355,9 +349,9 @@ def _enforce_variety_and_pacing(
                 "scene_id": i + 1,
                 "start": st,
                 "end": en,
-                "visual_type": "motion_graphic" if i % 3 == 2 else "stock_footage",
+                "visual_type": "motion_graphic",
                 "rapid_cut": False,
-                "search_queries": [derived["query"], fallback_queries[i % len(fallback_queries)]],
+                "search_queries": [],
                 "accent": "red" if i % 2 == 0 else "gold",
                 "graphic": {
                     "kind": "title_card",
@@ -367,6 +361,15 @@ def _enforce_variety_and_pacing(
                 },
             })
 
+    # Process scenes chronologically and honor absolute narration timestamps.
+    # Gaps are filled by extending the previous shot (or a generated opener),
+    # while overlaps are trimmed at the current cursor. Never move a later
+    # scene earlier just to make the timeline contiguous.
+    raw_scenes = sorted(
+        raw_scenes,
+        key=lambda item: float(item.get("start", 0.0)) if isinstance(item, dict) else 0.0,
+    )
+
     seen_queries: Set[str] = set()
     consecutive_normal_stock = 0
     consecutive_rapid_stock = 0
@@ -374,28 +377,60 @@ def _enforce_variety_and_pacing(
     cursor = 0.0
 
     for idx, sc in enumerate(raw_scenes):
-        if cursor >= total_duration - 0.15:
-            break
+        if not isinstance(sc, dict) or cursor >= total_duration - 0.15:
+            continue
 
-        orig_start = float(sc.get("start", cursor))
+        orig_start = max(0.0, float(sc.get("start", cursor)))
         orig_end = float(sc.get("end", orig_start + 5.0))
         orig_dur = float(sc.get("duration") or (orig_end - orig_start if orig_end > orig_start else 5.0))
+        requested_start = min(total_duration, max(cursor, orig_start))
 
+        # Do not stretch one unrelated shot across a long transcript gap.
+        # Small gaps can hold the previous shot; larger gaps become concise,
+        # transcript-led motion graphics until the next timestamped scene.
+        if requested_start > cursor + 0.20:
+            gap_duration = requested_start - cursor
+            if cleaned and gap_duration <= 7.5:
+                cleaned[-1]["end"] = round(requested_start, 3)
+                cleaned[-1]["duration"] = round(cleaned[-1]["end"] - cleaned[-1]["start"], 3)
+            else:
+                gap_cursor = cursor
+                while gap_cursor < requested_start - 0.15:
+                    gap_end = min(requested_start, gap_cursor + 5.5)
+                    gap_text = _find_segment_text_for_range(segments, gap_cursor, gap_end, fallback_full)
+                    gap_topic = _derive_topic_from_transcript(gap_text, len(cleaned), title=title)
+                    graphic = {
+                        "kind": "title_card", "heading": gap_topic["heading"],
+                        "subheading": "", "items": gap_topic["items"]
+                    }
+                    cleaned.append({
+                        "scene_id": len(cleaned) + 1,
+                        "start": round(gap_cursor, 3), "end": round(gap_end, 3),
+                        "duration": round(gap_end - gap_cursor, 3),
+                        "visual_type": "motion_graphic", "type": "motion_graphic",
+                        "rapid_cut": False, "search_queries": [], "search_query": "",
+                        "accent": "red" if len(cleaned) % 2 == 0 else "gold",
+                        "motion_effect": motions[len(cleaned) % len(motions)],
+                        "color_grade": _scene_grade_for_text(gap_text),
+                        "graphic": graphic, "show_overlay": False,
+                        "overlay_headline": graphic["heading"], "overlay_subtext": ""
+                    })
+                    gap_cursor = gap_end
+            cursor = requested_start
+
+        start = round(cursor, 3)
         is_rapid = bool(sc.get("rapid_cut")) and orig_dur < 3.0
-        if is_rapid:
-            dur = max(1.6, min(3.0, orig_dur))
-        else:
-            dur = max(3.5, min(7.5, orig_dur))
-
-        start = round(cursor, 2)
-        end = round(min(total_duration, start + dur), 2)
-        if total_duration - end < 1.5:
-            end = round(total_duration, 2)
-        actual_dur = round(max(1.5, end - start), 2)
+        target_end = orig_end if orig_end > start + 0.25 else max(orig_start + orig_dur, start + 1.0)
+        end = round(min(total_duration, max(start + 0.5, target_end)), 3)
+        if total_duration - end < 0.25:
+            end = round(total_duration, 3)
+        actual_dur = round(end - start, 3)
+        if actual_dur <= 0:
+            continue
 
         vtype = sc.get("visual_type") or sc.get("type") or "stock_footage"
         if vtype not in ("stock_footage", "motion_graphic"):
-            vtype = "stock_footage" if is_rapid else ("motion_graphic" if idx % 3 == 2 else "stock_footage")
+            vtype = "stock_footage"
 
         if is_rapid:
             if consecutive_rapid_stock >= 4:
@@ -409,11 +444,7 @@ def _enforce_variety_and_pacing(
         else:
             consecutive_rapid_stock = 0
             if vtype == "stock_footage":
-                if consecutive_normal_stock >= 2:
-                    vtype = "motion_graphic"
-                    consecutive_normal_stock = 0
-                else:
-                    consecutive_normal_stock += 1
+                consecutive_normal_stock += 1
             else:
                 consecutive_normal_stock = 0
 
@@ -444,7 +475,6 @@ def _enforce_variety_and_pacing(
                     seen_queries.add(low)
                 if len(queries) >= 2:
                     break
-
             if not queries:
                 for fq in fallback_queries:
                     if fq.lower() not in seen_queries:
@@ -456,7 +486,6 @@ def _enforce_variety_and_pacing(
 
         graphic = _normalize_graphic(sc, len(cleaned), transcript_text=seg_txt, title=title)
         accent = "red" if sc.get("accent") == "red" or idx % 2 == 0 else "gold"
-
         cleaned.append({
             "scene_id": len(cleaned) + 1,
             "start": start,
@@ -471,58 +500,104 @@ def _enforce_variety_and_pacing(
             "motion_effect": sc.get("motion_effect") or motions[idx % len(motions)],
             "color_grade": _scene_grade_for_text(seg_txt, str(sc.get("color_grade") or "")),
             "graphic": graphic,
+            "show_overlay": bool(sc.get("show_overlay", idx % 4 == 1)) and not is_rapid,
             "overlay_headline": graphic["heading"],
             "overlay_subtext": graphic["subheading"],
         })
         cursor = end
 
-    # Extend seamlessly up to the FULL audio duration (total_duration) so video never stops at 4 seconds!
+    # Fill the remaining narration tail without shortening the audio timeline.
     if cleaned and cleaned[-1]["end"] < total_duration:
-        gap = round(total_duration - cleaned[-1]["end"], 2)
+        gap = round(total_duration - cleaned[-1]["end"], 3)
         if gap <= 3.5:
-            cleaned[-1]["end"] = round(total_duration, 2)
-            cleaned[-1]["duration"] = round(cleaned[-1]["end"] - cleaned[-1]["start"], 2)
+            cleaned[-1]["end"] = round(total_duration, 3)
+            cleaned[-1]["duration"] = round(cleaned[-1]["end"] - cleaned[-1]["start"], 3)
         else:
             while cursor < total_duration - 0.15:
                 s_idx = len(cleaned)
-                start = round(cursor, 2)
-                end = round(min(total_duration, start + 5.5), 2)
-                if total_duration - end < 1.5:
-                    end = round(total_duration, 2)
-                dur = round(max(1.5, end - start), 2)
-                vtype = "motion_graphic" if s_idx % 3 == 2 else "stock_footage"
+                start = round(cursor, 3)
+                end = round(min(total_duration, start + 5.5), 3)
                 seg_txt = _find_segment_text_for_range(segments, start, end, fallback_full)
                 derived = _derive_topic_from_transcript(seg_txt, s_idx, title=title)
-                fq = fallback_queries[s_idx % len(fallback_queries)]
-                if derived.get("matched") and derived["query"].lower() not in seen_queries:
-                    fq = derived["query"]
-                seen_queries.add(fq.lower())
-
+                query = derived["query"]
                 cleaned.append({
-                    "scene_id": s_idx + 1,
-                    "start": start,
-                    "end": end,
-                    "duration": dur,
-                    "visual_type": vtype,
-                    "type": vtype,
-                    "rapid_cut": False,
-                    "search_queries": [fq] if vtype == "stock_footage" else [],
-                    "search_query": fq if vtype == "stock_footage" else "",
+                    "scene_id": s_idx + 1, "start": start, "end": end,
+                    "duration": round(end - start, 3), "visual_type": "motion_graphic",
+                    "type": "motion_graphic", "rapid_cut": False,
+                    "search_queries": [], "search_query": "",
                     "accent": "red" if s_idx % 2 == 0 else "gold",
                     "motion_effect": motions[s_idx % len(motions)],
                     "color_grade": _scene_grade_for_text(seg_txt),
-                    "graphic": {
-                        "kind": ["title_card", "stat_chart", "timeline", "map_marker"][s_idx % 4],
-                        "heading": derived["heading"],
-                        "subheading": "",
-                        "items": derived["items"],
-                    },
-                    "overlay_headline": derived["heading"],
-                    "overlay_subtext": "",
+                    "graphic": {"kind": "title_card", "heading": derived["heading"],
+                                "subheading": "", "items": derived["items"]},
+                    "show_overlay": False, "overlay_headline": derived["heading"], "overlay_subtext": ""
                 })
                 cursor = end
 
     return cleaned
+
+
+
+def _is_valid_provider_plan(
+    plan: Any,
+    total_duration: float,
+    window_start: float = 0.0,
+    window_end: Optional[float] = None,
+) -> bool:
+    if not isinstance(plan, dict) or not isinstance(plan.get("scenes"), list) or not plan["scenes"]:
+        return False
+    window_end = float(total_duration if window_end is None else window_end)
+    valid_count = 0
+    for scene in plan["scenes"]:
+        if not isinstance(scene, dict):
+            continue
+        try:
+            start = float(scene.get("start"))
+            end = float(scene.get("end"))
+        except (TypeError, ValueError):
+            continue
+        if start < max(0.0, window_start - 0.5) or end <= start or start >= window_end or end > window_end + 1.5:
+            continue
+        queries = scene.get("search_queries", scene.get("search_query", []))
+        if isinstance(queries, str):
+            queries = [queries]
+        if scene.get("visual_type") == "stock_footage" and not queries:
+            continue
+        valid_count += 1
+    return valid_count >= max(1, min(3, len(plan["scenes"]) // 3))
+
+
+def _local_graphic_scenes(
+    segments: List[Dict[str, Any]],
+    window_start: float,
+    window_end: float,
+    fallback_full: str,
+    title: str,
+) -> List[Dict[str, Any]]:
+    scenes: List[Dict[str, Any]] = []
+    cursor = float(window_start)
+    while cursor < window_end - 0.15:
+        end = min(float(window_end), cursor + 5.5)
+        segment_text = _find_segment_text_for_range(segments, cursor, end, fallback_full)
+        derived = _derive_topic_from_transcript(segment_text, len(scenes), title=title)
+        scenes.append({
+            "scene_id": len(scenes) + 1,
+            "start": round(cursor, 3),
+            "end": round(end, 3),
+            "duration": round(end - cursor, 3),
+            "visual_type": "motion_graphic",
+            "rapid_cut": False,
+            "search_queries": [],
+            "accent": "red" if len(scenes) % 2 == 0 else "gold",
+            "graphic": {
+                "kind": "title_card",
+                "heading": derived["heading"],
+                "subheading": "",
+                "items": derived["items"],
+            },
+        })
+        cursor = end
+    return scenes
 
 
 def plan_scenes(
@@ -531,9 +606,18 @@ def plan_scenes(
     title: str = "",
     segments: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    update_status("creating_scene_plan", f"AI ডিরেক্টর সম্পূর্ণ {round(total_duration, 1)} সেকেন্ডের দৃশ্য পরিকল্পনা তৈরি করছে...", percent=42)
-    prompt = _build_prompt(transcript_text, total_duration, title=title)
-    plan: Dict[str, Any] = {}
+    segments = segments or []
+    chunk_seconds = max(90, min(180, int(os.environ.get("AI_SCENE_CHUNK_SECONDS", "120"))))
+    use_chunks = bool(segments) and total_duration > 180
+    windows = []
+    if use_chunks:
+        cursor = 0.0
+        while cursor < total_duration - 0.15:
+            window_end = min(total_duration, cursor + chunk_seconds)
+            windows.append((cursor, window_end))
+            cursor = window_end
+    else:
+        windows = [(0.0, total_duration)]
 
     providers = [
         ("gemini", os.environ.get("GEMINI_API_KEY", "").strip(), _call_gemini),
@@ -541,39 +625,91 @@ def plan_scenes(
         ("openrouter", os.environ.get("OPENROUTER_API_KEY", "").strip(), _call_openrouter),
     ]
 
-    for name, api_key, fn in providers:
-        if not api_key:
-            continue
-        try:
-            print(f"[Director] Trying provider: {name}", flush=True)
-            plan = fn(prompt, api_key)
-            if isinstance(plan, dict) and isinstance(plan.get("scenes"), list) and plan["scenes"]:
-                print(f"[Director] Scene plan generated via {name} ({len(plan['scenes'])} scenes)", flush=True)
-                break
-        except Exception as e:
-            print(f"[Director] {name} failed: {e}", flush=True)
-            continue
+    raw_scenes: List[Dict[str, Any]] = []
+    providers_used: List[str] = []
+    fallback_used = False
+    color_grade = "cinematic_teal"
+    mood = "documentary_ambient"
 
-    raw_scenes = plan.get("scenes") if isinstance(plan, dict) else []
-    color_grade = plan.get("color_grade") if isinstance(plan, dict) else "cinematic_teal"
-    if color_grade not in VALID_GRADES:
-        color_grade = "cinematic_teal"
-    mood = (plan.get("mood") if isinstance(plan, dict) else None) or "documentary_ambient"
+    for chunk_index, (window_start, window_end) in enumerate(windows, start=1):
+        chunk_segments = [
+            seg for seg in segments
+            if float(seg.get("start", 0.0)) < window_end and float(seg.get("end", seg.get("start", 0.0))) > window_start
+        ]
+        if chunk_segments:
+            chunk_text = "\n".join(
+                f"[{float(seg.get('start', 0.0)):.1f}s - {float(seg.get('end', 0.0)):.1f}s] {str(seg.get('text', '')).strip()}"
+                for seg in chunk_segments if str(seg.get("text", "")).strip()
+            )
+        else:
+            chunk_text = transcript_text if len(windows) == 1 else ""
+
+        update_status(
+            "creating_scene_plan",
+            f"AI Director দৃশ্য পরিকল্পনা তৈরি করছে: অংশ {chunk_index}/{len(windows)} ({round(window_start)}–{round(window_end)} সেকেন্ড)...",
+            percent=min(49, 42 + int(7 * chunk_index / max(1, len(windows))))
+        )
+        prompt = _build_prompt(chunk_text or transcript_text, total_duration, title=title,
+                               window_start=window_start, window_end=window_end)
+        chunk_plan: Dict[str, Any] = {}
+        chunk_provider = ""
+
+        for name, api_key, fn in providers:
+            if not api_key:
+                continue
+            try:
+                print(f"[Director] Trying {name} for scene-plan chunk {chunk_index}/{len(windows)}", flush=True)
+                candidate = fn(prompt, api_key)
+                if _is_valid_provider_plan(candidate, total_duration, window_start, window_end):
+                    chunk_plan = candidate
+                    chunk_provider = name
+                    print(f"[Director] Valid {name} plan: {len(candidate['scenes'])} scenes in chunk {chunk_index}", flush=True)
+                    break
+                print(f"[Director] {name} returned invalid timestamps/content for chunk {chunk_index}; trying next free provider.", flush=True)
+            except Exception as exc:
+                print(f"[Director] {name} failed for chunk {chunk_index}: {exc}", flush=True)
+
+        if chunk_plan:
+            raw_scenes.extend(chunk_plan.get("scenes", []))
+            if chunk_provider not in providers_used:
+                providers_used.append(chunk_provider)
+            if chunk_index == 1:
+                candidate_grade = chunk_plan.get("color_grade")
+                candidate_mood = chunk_plan.get("mood")
+                if candidate_grade in VALID_GRADES:
+                    color_grade = candidate_grade
+                if candidate_mood:
+                    mood = str(candidate_mood)[:60]
+        else:
+            fallback_used = True
+            raw_scenes.extend(_local_graphic_scenes(
+                chunk_segments, window_start, window_end, chunk_text or transcript_text, title
+            ))
+            print(f"[Director] Using transcript-led local graphics fallback for chunk {chunk_index}", flush=True)
 
     scenes = _enforce_variety_and_pacing(
-        raw_scenes or [],
+        raw_scenes,
         total_duration,
         segments=segments,
         fallback_full=transcript_text,
         title=title,
     )
-    update_status("creating_scene_plan", f"{len(scenes)}টি ডাইনামিক দৃশ্য পরিকল্পনা প্রস্তুত হয়েছে ({round(total_duration, 1)} সেকেন্ড)।", percent=50)
+    provider_used = "+".join(providers_used) if providers_used else "local_graphics_fallback"
+    if fallback_used and providers_used:
+        planning_mode = "mixed_ai_local"
+    elif providers_used:
+        planning_mode = "ai_director"
+    else:
+        planning_mode = "local_graphics_fallback"
 
+    update_status("creating_scene_plan", f"{len(scenes)}টি দৃশ্যের স্বয়ংক্রিয় পরিকল্পনা প্রস্তুত ({round(total_duration, 1)} সেকেন্ড)।", percent=50)
     return {
         "title": title or os.environ.get("DOC_TITLE", "").strip() or "Documentary",
         "color_grade": color_grade,
         "mood": mood,
         "scene_count": len(scenes),
+        "ai_provider": provider_used,
+        "planning_mode": planning_mode,
         "total_duration": round(float(total_duration), 2),
         "scenes": scenes,
     }

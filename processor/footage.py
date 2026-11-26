@@ -12,10 +12,14 @@ BLOCKED_LICENSE_TOKENS = ("nc", "non-commercial", "noncommercial", "nd", "no-der
 
 
 def _is_license_unrestricted(license_label: str) -> bool:
+    # Wikimedia results are accepted only when their metadata explicitly says
+    # CC0 or Public Domain. Missing/ambiguous labels are not treated as free.
     low = (license_label or "").strip().lower()
     if not low:
-        return True
-    return not any(tok in low for tok in BLOCKED_LICENSE_TOKENS)
+        return False
+    if any(tok in low for tok in BLOCKED_LICENSE_TOKENS):
+        return False
+    return "cc0" in low or "public domain" in low
 
 
 def _pick_best_pexels_file(video_files):
@@ -212,7 +216,7 @@ def _stream_trim_video(url, dest_mp4, needed_duration):
         "-t", f"{clip_len:.2f}",
         "-an",
         "-vf", "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1,fps=30",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
         "-pix_fmt", "yuv420p",
         str(dest_mp4),
     ]
@@ -246,7 +250,7 @@ def _image_to_ken_burns_mp4(img_path, out_mp4, duration, scene_id):
         "-t", f"{dur:.3f}",
         "-an",
         "-vf", f"{zp},setsar=1,format=yuv420p",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
         "-pix_fmt", "yuv420p",
         str(out_mp4)
     ]

@@ -407,7 +407,7 @@ def create_motion_graphics(scene_plan: dict) -> dict:
             scene["graphic_video_path"] = str(out_mp4)
             scene["graphic_path"] = str(card_png)
             graphic_count += 1
-        else:
+        elif scene.get("show_overlay", False):
             ov_mov = gfx_dir / f"overlay_{sid:03d}.mov"
             res_mov = _render_animated_overlay_mov(scene, palette, ov_mov, dur)
             if res_mov and res_mov.exists():

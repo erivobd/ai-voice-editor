@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 from pathlib import Path
@@ -10,6 +11,7 @@ from director import create_scene_plan
 from footage import collect_stock_footage
 from graphics import create_motion_graphics
 from video_render import render_documentary
+from quality_control import validate_final_video
 
 WORK = Path(os.environ.get("WORK_DIR", "/tmp/doc_job"))
 
@@ -36,7 +38,18 @@ def main():
         current_stage = "rendering_final_video"
         final_mp4, srt_path = render_documentary(scene_plan, transcript_data, original_audio_path)
 
-        update_status("rendering_final_video", "চূড়ান্ত MP4 ভিডিও আপলোড হচ্ছে...", percent=97)
+        current_stage = "quality_control"
+        update_status("quality_control", "স্বয়ংক্রিয় Quality Control: 1080p, 30 FPS, অডিও ও সময় যাচাই হচ্ছে...", percent=95)
+        qc_report = validate_final_video(final_mp4, transcript_data["duration"], WORK / "quality_report.json")
+        qc_report["ai_provider"] = scene_plan.get("ai_provider", "unknown")
+        qc_report["planning_mode"] = scene_plan.get("planning_mode", "unknown")
+        (WORK / "quality_report.json").write_text(
+            json.dumps(qc_report, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        upload_asset_to_release(WORK / "quality_report.json", "quality_report.json", "application/json")
+
+        update_status("quality_control", "Quality Check সম্পন্ন। চূড়ান্ত MP4 আপলোড হচ্ছে...", percent=97,
+                      extra={"quality_check_passed": qc_report["passed"], "quality_warnings": qc_report["warnings"]})
         upload_asset_to_release(final_mp4, "final_documentary.mp4", "video/mp4")
         if srt_path.exists():
             upload_asset_to_release(srt_path, "subtitles.srt", "text/plain")
@@ -49,7 +62,11 @@ def main():
             extra={
                 "video_size_mb": size_mb,
                 "duration_sec": transcript_data["duration"],
-                "scene_count": scene_plan["scene_count"]
+                "scene_count": scene_plan["scene_count"],
+                "ai_provider": scene_plan.get("ai_provider", "unknown"),
+                "planning_mode": scene_plan.get("planning_mode", "unknown"),
+                "quality_check_passed": qc_report["passed"],
+                "quality_warnings": qc_report["warnings"]
             }
         )
     except Exception as exc:

@@ -5,12 +5,18 @@ from status import update_status
 from audio_music import prepare_background_music
 
 WORK = Path(os.environ.get("WORK_DIR", "/tmp/doc_job"))
+_ALLOWED_PRESETS = {"ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower"}
+ENCODER_PRESET = os.environ.get("VIDEO_ENCODER_PRESET", "medium").strip().lower()
+if ENCODER_PRESET not in _ALLOWED_PRESETS:
+    ENCODER_PRESET = "medium"
+SCENE_CRF = str(max(16, min(24, int(os.environ.get("VIDEO_SCENE_CRF", "19")))))
+FINAL_CRF = str(max(16, min(24, int(os.environ.get("VIDEO_FINAL_CRF", "18")))))
 
 GRADE_FILTERS = {
-    "cinematic_teal": "eq=contrast=1.07:saturation=0.90:brightness=-0.015,colorbalance=bs=0.035:rs=-0.025,vignette=PI/5,unsharp=5:5:0.35:3:3:0.15",
-    "warm_history": "eq=contrast=1.06:saturation=0.92:brightness=-0.01,colorbalance=rs=0.045:gs=0.015:bs=-0.035,vignette=PI/5",
-    "cool_science": "eq=contrast=1.07:saturation=0.91,colorbalance=bs=0.045:gs=0.015:rs=-0.03,vignette=PI/5",
-    "neutral_doc": "eq=contrast=1.035:saturation=0.96,vignette=PI/6"
+    "cinematic_teal": "eq=contrast=1.045:saturation=0.98:brightness=-0.008,colorbalance=bs=0.012:rs=-0.008,vignette=PI/7,unsharp=5:5:0.22:3:3:0.10",
+    "warm_history": "eq=contrast=1.045:saturation=0.98:brightness=-0.005,colorbalance=rs=0.025:gs=0.008:bs=-0.018,vignette=PI/7",
+    "cool_science": "eq=contrast=1.045:saturation=0.97,colorbalance=bs=0.025:gs=0.008:rs=-0.015,vignette=PI/7",
+    "neutral_doc": "eq=contrast=1.025:saturation=0.99,vignette=PI/8"
 }
 
 
@@ -96,7 +102,7 @@ def _render_scene_clip(scene, out_clip, grade_filter):
                 "-an",
                 "-filter_complex", fc,
                 "-map", "[vout]",
-                "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+                "-c:v", "libx264", "-preset", ENCODER_PRESET, "-crf", SCENE_CRF,
                 "-video_track_timescale", "15360",
                 "-pix_fmt", "yuv420p",
                 str(out_clip)
@@ -113,7 +119,7 @@ def _render_scene_clip(scene, out_clip, grade_filter):
                 "-t", f"{dur:.3f}",
                 "-an",
                 "-vf", vf,
-                "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+                "-c:v", "libx264", "-preset", ENCODER_PRESET, "-crf", SCENE_CRF,
                 "-video_track_timescale", "15360",
                 "-pix_fmt", "yuv420p",
                 str(out_clip)
@@ -133,7 +139,7 @@ def _render_scene_clip(scene, out_clip, grade_filter):
             "-t", f"{dur:.3f}",
             "-an",
             "-vf", vf,
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+            "-c:v", "libx264", "-preset", ENCODER_PRESET, "-crf", SCENE_CRF,
             "-video_track_timescale", "15360",
             "-pix_fmt", "yuv420p",
             str(out_clip)
@@ -157,7 +163,7 @@ def _render_scene_clip(scene, out_clip, grade_filter):
             "-t", f"{dur:.3f}",
             "-an",
             "-vf", vf,
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+            "-c:v", "libx264", "-preset", ENCODER_PRESET, "-crf", SCENE_CRF,
             "-video_track_timescale", "15360",
             "-pix_fmt", "yuv420p",
             str(out_clip)
@@ -186,11 +192,20 @@ def render_documentary(scene_plan, transcript_data, original_audio_path):
     concat_list.write_text("\n".join(concat_lines) + "\n", encoding="utf-8")
 
     merged_video = WORK / "merged_video.mp4"
+    # Re-encode the concatenated CFR clips instead of stream-copying them.
+    # Stream-copy concat can preserve per-clip timestamp/time-base quirks and
+    # accumulate small timing discontinuities at every cut.
     run_ffmpeg([
         "ffmpeg", "-y",
+        "-fflags", "+genpts",
         "-f", "concat", "-safe", "0",
         "-i", str(concat_list),
-        "-c", "copy",
+        "-an",
+        "-vf", "setpts=PTS-STARTPTS,fps=30,setsar=1",
+        "-fps_mode", "cfr",
+        "-c:v", "libx264", "-preset", ENCODER_PRESET, "-crf", FINAL_CRF,
+        "-pix_fmt", "yuv420p", "-r", "30",
+        "-video_track_timescale", "15360",
         str(merged_video)
     ])
 
@@ -215,7 +230,7 @@ def render_documentary(scene_plan, transcript_data, original_audio_path):
         prepare_background_music(scene_plan.get("mood", "documentary_ambient"), duration, bg_wav)
         inputs.extend(["-i", str(bg_wav)])
         # Keep narration clearly in front; duck music gently under the voice.
-        audio_filter = "[1:a]aresample=48000,aformat=channel_layouts=stereo,loudnorm=I=-16:TP=-1.5:LRA=11[voice];[2:a]aresample=48000,volume=0.35[bgm];[voice][bgm]amix=inputs=2:duration=first:dropout_transition=2:weights=1 0.45:normalize=0,alimiter=limit=0.95[aout]"
+        audio_filter = "[1:a]aresample=48000,asetpts=PTS-STARTPTS,aformat=channel_layouts=stereo,loudnorm=I=-16:TP=-1.5:LRA=11[voice];[2:a]aresample=48000,asetpts=PTS-STARTPTS,volume=0.35[bgm];[voice][bgm]amix=inputs=2:duration=first:dropout_transition=2:weights=1 0.45:normalize=0,alimiter=limit=0.95,asetpts=PTS-STARTPTS[aout]"
         audio_map = ["-map", "[aout]"]
     else:
         audio_filter = None
@@ -225,22 +240,24 @@ def render_documentary(scene_plan, transcript_data, original_audio_path):
     if burn_subs and srt_path.exists() and srt_path.stat().st_size > 0:
         escaped_srt = str(srt_path).replace("\\", "/").replace(":", "\\:")
         sub_style = "FontName=Hind Siliguri,FontSize=21,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H64000000,BorderStyle=3,Outline=1,Shadow=0,MarginV=36"
-        vf = f"subtitles='{escaped_srt}':force_style='{sub_style}'"
+        vf = f"setpts=PTS-STARTPTS,fps=30,subtitles='{escaped_srt}':force_style='{sub_style}'"
         if audio_filter:
             cmd.extend(["-filter_complex", f"[0:v]{vf}[vout];{audio_filter}", "-map", "[vout]"] + audio_map)
         else:
             cmd.extend(["-vf", vf, "-map", "0:v:0"] + audio_map)
-        cmd.extend(["-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p"])
+        cmd.extend(["-c:v", "libx264", "-preset", ENCODER_PRESET, "-crf", FINAL_CRF, "-pix_fmt", "yuv420p", "-r", "30"])
     else:
+        # merged_video.mp4 is already timestamp-normalized, CFR 30 FPS and
+        # 1920x1080. Stream-copy it to avoid a needless second video encode.
+        cmd.extend(["-map", "0:v:0"] + audio_map)
+        cmd.extend(["-c:v", "copy"])
         if audio_filter:
-            cmd.extend(["-filter_complex", audio_filter, "-map", "0:v:0"] + audio_map)
+            cmd.extend(["-filter_complex", audio_filter])
         else:
-            cmd.extend(["-map", "0:v:0"] + audio_map)
-        cmd.extend(["-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-pix_fmt", "yuv420p", "-r", "30"])
+            cmd.extend(["-af", "aresample=48000,asetpts=PTS-STARTPTS"])
 
     cmd.extend([
         "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
-        "-r", "30", "-s", "1920x1080",
         "-t", f"{duration:.3f}",
         "-movflags", "+faststart",
         str(final_mp4)

@@ -50,6 +50,11 @@ STAGES = {
         "percent": 94,
         "message": "আপনার মূল ভয়েসের সাথে চূড়ান্ত 1080p MP4 রেন্ডার হচ্ছে..."
     },
+    "quality_control": {
+        "label": "Automated Quality Check",
+        "percent": 96,
+        "message": "ভিডিওর সময়, অডিও, রেজল্যুশন ও ফ্রেমরেট যাচাই হচ্ছে..."
+    },
     "completed": {
         "label": "Completed",
         "percent": 100,
