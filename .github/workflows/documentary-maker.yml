@@ -15,7 +15,7 @@ on:
       subtitles:
         description: "Burn subtitles into video (true/false)"
         required: false
-        default: "true"
+        default: "false"
         type: string
       bg_music:
         description: "Include subtle background music (true/false)"
@@ -23,9 +23,14 @@ on:
         default: "true"
         type: string
       video_theme:
-        description: "Animation Theme (cinematic_dark, vox_colorful, editorial_paper, vibrant_gradient, minimal_light, crimson_noir)"
+        description: "Animation Theme (cinematic_dark, crimson_noir, vox_colorful, editorial_paper, vibrant_gradient, minimal_light)"
         required: false
-        default: "cinematic_dark"
+        default: "crimson_noir"
+        type: string
+      has_custom_srt:
+        description: "Whether custom SRT file/text was provided (true/false)"
+        required: false
+        default: "false"
         type: string
 
 permissions:
@@ -46,12 +51,7 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Set up Node.js 20 (for Remotion Graphics)
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Install FFmpeg, Bengali Fonts, HarfBuzz/RAQM, and Chromium Deps
+      - name: Install FFmpeg, Bengali Fonts, and HarfBuzz/RAQM Deps
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
@@ -65,19 +65,8 @@ jobs:
             libfribidi-dev \
             libharfbuzz-dev \
             libraqm-dev \
-            libnss3 \
-            libatk1.0-0 \
-            libatk-bridge2.0-0 \
-            libcups2 \
-            libdrm2 \
-            libxkbcommon0 \
-            libxcomposite1 \
-            libxdamage1 \
-            libxfixes3 \
-            libxrandr2 \
-            libgbm1 \
-            libpango-1.0-0 \
-            libcairo2 || true
+            libjpeg-dev \
+            zlib1g-dev || true
           mkdir -p assets/fonts
           curl -fsSL -o assets/fonts/HindSiliguri-Bold.ttf "https://github.com/google/fonts/raw/main/ofl/hindsiliguri/HindSiliguri-Bold.ttf"
           curl -fsSL -o assets/fonts/HindSiliguri-SemiBold.ttf "https://github.com/google/fonts/raw/main/ofl/hindsiliguri/HindSiliguri-SemiBold.ttf"
@@ -90,12 +79,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Install Remotion & Chromium Headless Shell
-        run: |
-          cd remotion
-          npm install --no-audit --no-fund
-          npx remotion browser ensure
-
       - name: Run AI Documentary Pipeline
         env:
           JOB_ID: ${{ inputs.job_id }}
@@ -103,6 +86,8 @@ jobs:
           BURN_SUBTITLES: ${{ inputs.subtitles }}
           ENABLE_BG_MUSIC: ${{ inputs.bg_music }}
           VIDEO_THEME: ${{ inputs.video_theme }}
+          HAS_CUSTOM_SRT: ${{ inputs.has_custom_srt }}
+          AUDIO_LANGUAGE: bn
           WORK_DIR: /tmp/doc_job
           WHISPER_MODEL: small
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
