@@ -20,6 +20,7 @@ const APP_ACCESS_PIN = (process.env.APP_ACCESS_PIN || "").trim();
 const ALLOWED_EXTS = new Set([".mp3", ".wav", ".m4a", ".aac", ".flac"]);
 const VALID_THEMES = new Set([
   "cinematic_dark",
+  "crimson_noir",
   "vox_colorful",
   "editorial_paper",
   "vibrant_gradient",
