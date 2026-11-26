@@ -47,18 +47,22 @@ def _build_prompt(transcript_text: str, total_duration: float, title: str = "") 
     title_hint = f"Documentary Title: {title}\n" if title else ""
     return f"""
 You are an elite documentary video director inspired by high-retention engineering & explainer channels.
-{title_hint}Create a dynamic, visually varied scene plan for a {total_duration:.1f}s documentary from this transcript:
+{title_hint}Create a dynamic, visually varied scene plan for a {total_duration:.1f}s documentary from this timestamped transcript:
 
 TRANSCRIPT:
 {transcript_text[:12000]}
 
 CRITICAL VISUAL & PACING RULES:
-1. NEVER repeat the exact same stock search query or visual subject across scenes. Give 2 unique, specific English search queries per stock_footage scene in "search_queries".
-2. NEVER put more than 2 "stock_footage" scenes in a row. Frequently alternate with "motion_graphic" scenes (stat_chart, timeline, map_marker, title_card) so the video feels like a real edited documentary, not a stock slideshow.
-3. Keep scene durations punchy and varied (4.0s to 7.5s), covering 0.0s to {total_duration:.1f}s continuously with zero gaps.
-4. For "graphic" -> "heading", "subheading", and "items": write concise, punchy text in the SAME language as the transcript (Bengali if the transcript is Bengali, English if English). Keep heading <= 34 chars and subheading <= 54 chars.
-5. For "stat_chart" scenes, format each item in "items" as "Label: number" (e.g., ["২০০মি: 35", "৪০০মি: 58", "৬০০মি: 82", "৮০০মি: 100"]).
-6. Choose "color_grade" from: "cinematic_teal", "warm_history", "cool_science", "neutral_doc".
+1. RAPID-CUT & LIST-SYNC RULE (HIGHEST PRIORITY):
+   - Whenever the narrator lists multiple distinct visual subjects separated by commas, "এবং", "আর", "ও", or "and" (e.g., "নীল সমুদ্র, ঘন সবুজ অরণ্য আর বরফে ঢাকা পাহাড়" or "আধুনিক শহর, দ্রুতগতির প্রযুক্তি এবং মহাকাশজয়"), DO NOT combine them into one long scene.
+   - Immediately split them into back-to-back rapid-cut "stock_footage" scenes (1.2s to 2.8s each) synced tightly to the exact spoken moment of each item, and set `"rapid_cut": true` on those scenes.
+   - Give each split scene its own specific English visual query matching that exact noun (e.g., "deep blue ocean waves aerial", "dense green forest canopy drone", "snow covered mountain peaks").
+2. NEVER repeat the exact same stock search query or visual subject across scenes. Give 2 unique, specific English search queries per stock_footage scene in "search_queries".
+3. For normal narration (non-rapid-cut), keep scene durations 3.5s to 7.0s and alternate with "motion_graphic" scenes (stat_chart, timeline, map_marker, title_card) so no more than 2 normal stock_footage scenes appear in a row.
+4. Cover 0.0s to {total_duration:.1f}s continuously with zero gaps, keeping scene start/end timestamps aligned with the transcript.
+5. For "graphic" -> "heading", "subheading", and "items": write concise, punchy text in the SAME language as the transcript (Bengali if the transcript is Bengali, English if English). Keep heading <= 34 chars and subheading <= 54 chars.
+6. For "stat_chart" scenes, format each item in "items" as "Label: number" (e.g., ["২০০মি: 35", "৪০০মি: 58", "৬০০মি: 82", "৮০০মি: 100"]).
+7. Choose "color_grade" from: "cinematic_teal", "warm_history", "cool_science", "neutral_doc".
 
 Return ONLY valid JSON with this exact schema:
 {{
@@ -68,29 +72,61 @@ Return ONLY valid JSON with this exact schema:
     {{
       "scene_id": 1,
       "start": 0.0,
-      "end": 5.5,
+      "end": 5.0,
       "visual_type": "stock_footage",
-      "search_queries": ["aerial skyscraper dusk wide shot", "modern glass tower skyline twilight"],
+      "rapid_cut": false,
+      "search_queries": ["night sky stars milky way timelapse", "deep space cosmos stars wide"],
       "accent": "gold",
       "graphic": {{
         "kind": "title_card",
-        "heading": "৮২৮ মিটার উচ্চতা",
-        "subheading": "বিশ্বের সর্বোচ্চ স্থাপনার প্রকৌশল রহস্য",
-        "items": ["১৬৩ তলা কাঠামো", "উচ্চগতির বাতাস প্রতিরোধী"]
+        "heading": "রাতের আকাশ",
+        "subheading": "মহাবিশ্বের অসংখ্য তারার মাঝে পৃথিবী",
+        "items": ["অসীম মহাবিশ্ব", "আমাদের আবাসস্থল"]
       }}
     }},
     {{
       "scene_id": 2,
-      "start": 5.5,
-      "end": 11.0,
-      "visual_type": "motion_graphic",
-      "search_queries": [],
+      "start": 5.0,
+      "end": 6.8,
+      "visual_type": "stock_footage",
+      "rapid_cut": true,
+      "search_queries": ["deep blue ocean waves aerial view", "vast blue sea horizon drone"],
       "accent": "gold",
       "graphic": {{
-        "kind": "stat_chart",
-        "heading": "উচ্চতার সাথে বাতাসের চাপ",
-        "subheading": "উপরে বাতাসের তীব্রতা দ্রুত বাড়ে",
-        "items": ["২০০মি: 35", "৪০০মি: 58", "৬০০মি: 82", "৮০০মি: 100"]
+        "kind": "title_card",
+        "heading": "সুবিশাল সমুদ্র",
+        "subheading": "",
+        "items": []
+      }}
+    }},
+    {{
+      "scene_id": 3,
+      "start": 6.8,
+      "end": 8.6,
+      "visual_type": "stock_footage",
+      "rapid_cut": true,
+      "search_queries": ["dense green rainforest canopy aerial", "lush green jungle trees drone"],
+      "accent": "gold",
+      "graphic": {{
+        "kind": "title_card",
+        "heading": "ঘন সবুজ অরণ্য",
+        "subheading": "",
+        "items": []
+      }}
+    }},
+    {{
+      "scene_id": 4,
+      "start": 8.6,
+      "end": 10.5,
+      "visual_type": "stock_footage",
+      "rapid_cut": true,
+      "search_queries": ["snow covered mountain peaks aerial", "himalayas snowy mountain ridge"],
+      "accent": "gold",
+      "graphic": {{
+        "kind": "title_card",
+        "heading": "বরফে ঢাকা পাহাড়",
+        "subheading": "",
+        "items": []
       }}
     }}
   ]
@@ -112,7 +148,7 @@ def _call_openrouter(prompt: str, api_key: str) -> Dict[str, Any]:
             {"role": "system", "content": "Return ONLY valid JSON. No markdown prose."},
             {"role": "user", "content": prompt},
         ],
-        "temperature": 0.55,
+        "temperature": 0.45,
     }
     req = urlrequest.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
     try:
@@ -130,7 +166,7 @@ def _call_openrouter(prompt: str, api_key: str) -> Dict[str, Any]:
                 {"role": "system", "content": "Return ONLY valid JSON. No markdown prose."},
                 {"role": "user", "content": prompt},
             ],
-            "temperature": 0.55,
+            "temperature": 0.45,
         }
         req = urlrequest.Request(
             url, data=json.dumps(single_payload).encode("utf-8"), headers=headers, method="POST"
@@ -160,7 +196,7 @@ def _call_groq(prompt: str, api_key: str) -> Dict[str, Any]:
                     {"role": "system", "content": "Return ONLY valid JSON."},
                     {"role": "user", "content": prompt},
                 ],
-                temperature=0.5,
+                temperature=0.45,
             )
             return _extract_json(completion.choices[0].message.content or "")
         except Exception as e:
@@ -240,6 +276,7 @@ def _enforce_variety_and_pacing(raw_scenes: List[Dict[str, Any]], total_duration
                 "start": round(i * step, 2),
                 "end": round(min((i + 1) * step, total_duration), 2),
                 "visual_type": "motion_graphic" if i % 3 == 2 else "stock_footage",
+                "rapid_cut": False,
                 "search_queries": [fallback_queries[i % len(fallback_queries)]],
                 "accent": "red" if i % 4 == 3 else "gold",
                 "graphic": {
@@ -253,37 +290,55 @@ def _enforce_variety_and_pacing(raw_scenes: List[Dict[str, Any]], total_duration
         ]
 
     seen_queries: Set[str] = set()
-    consecutive_stock = 0
+    consecutive_normal_stock = 0
+    consecutive_rapid_stock = 0
     cleaned: List[Dict[str, Any]] = []
     cursor = 0.0
 
     for idx, sc in enumerate(raw_scenes):
-        if cursor >= total_duration - 0.25:
+        if cursor >= total_duration - 0.2:
             break
 
         orig_start = float(sc.get("start", cursor))
-        orig_end = float(sc.get("end", orig_start + 5.5))
-        orig_dur = float(sc.get("duration") or (orig_end - orig_start if orig_end > orig_start else 5.5))
-        dur = max(3.5, min(8.0, orig_dur))
+        orig_end = float(sc.get("end", orig_start + 5.0))
+        orig_dur = float(sc.get("duration") or (orig_end - orig_start if orig_end > orig_start else 5.0))
+
+        is_rapid = bool(sc.get("rapid_cut")) or orig_dur < 3.2
+        if is_rapid:
+            dur = max(1.0, min(3.2, orig_dur))
+        else:
+            dur = max(3.2, min(7.5, orig_dur))
 
         start = round(cursor, 2)
         end = round(min(total_duration, start + dur), 2)
-        if total_duration - end < 2.0:
+        if total_duration - end < 1.2:
             end = round(total_duration, 2)
-        actual_dur = round(max(1.5, end - start), 2)
+        actual_dur = round(max(1.0, end - start), 2)
 
         vtype = sc.get("visual_type") or sc.get("type") or "stock_footage"
         if vtype not in ("stock_footage", "motion_graphic"):
-            vtype = "motion_graphic" if idx % 3 == 2 else "stock_footage"
+            vtype = "stock_footage" if is_rapid else ("motion_graphic" if idx % 3 == 2 else "stock_footage")
 
-        if vtype == "stock_footage":
-            if consecutive_stock >= 2:
+        if is_rapid:
+            # Allow up to 5 consecutive rapid-cut stock clips for spoken lists
+            if consecutive_rapid_stock >= 5:
                 vtype = "motion_graphic"
-                consecutive_stock = 0
+                consecutive_rapid_stock = 0
+                consecutive_normal_stock = 0
             else:
-                consecutive_stock += 1
+                vtype = "stock_footage"
+                consecutive_rapid_stock += 1
+                consecutive_normal_stock = 0
         else:
-            consecutive_stock = 0
+            consecutive_rapid_stock = 0
+            if vtype == "stock_footage":
+                if consecutive_normal_stock >= 2:
+                    vtype = "motion_graphic"
+                    consecutive_normal_stock = 0
+                else:
+                    consecutive_normal_stock += 1
+            else:
+                consecutive_normal_stock = 0
 
         raw_qs = sc.get("search_queries")
         if isinstance(raw_qs, str):
@@ -322,6 +377,7 @@ def _enforce_variety_and_pacing(raw_scenes: List[Dict[str, Any]], total_duration
             "duration": actual_dur,
             "visual_type": vtype,
             "type": vtype,
+            "rapid_cut": is_rapid,
             "search_queries": queries,
             "search_query": queries[0] if queries else "",
             "accent": accent,
@@ -334,17 +390,17 @@ def _enforce_variety_and_pacing(raw_scenes: List[Dict[str, Any]], total_duration
 
     if cleaned and cleaned[-1]["end"] < total_duration:
         gap = round(total_duration - cleaned[-1]["end"], 2)
-        if gap <= 4.0:
+        if gap <= 3.5:
             cleaned[-1]["end"] = round(total_duration, 2)
             cleaned[-1]["duration"] = round(cleaned[-1]["end"] - cleaned[-1]["start"], 2)
         else:
-            while cursor < total_duration - 0.25:
+            while cursor < total_duration - 0.2:
                 s_idx = len(cleaned)
                 start = round(cursor, 2)
-                end = round(min(total_duration, start + 6.0), 2)
-                if total_duration - end < 2.0:
+                end = round(min(total_duration, start + 5.5), 2)
+                if total_duration - end < 1.5:
                     end = round(total_duration, 2)
-                dur = round(max(1.5, end - start), 2)
+                dur = round(max(1.2, end - start), 2)
                 vtype = "motion_graphic" if s_idx % 3 == 2 else "stock_footage"
                 fq = fallback_queries[s_idx % len(fallback_queries)]
                 cleaned.append({
@@ -354,6 +410,7 @@ def _enforce_variety_and_pacing(raw_scenes: List[Dict[str, Any]], total_duration
                     "duration": dur,
                     "visual_type": vtype,
                     "type": vtype,
+                    "rapid_cut": False,
                     "search_queries": [fq] if vtype == "stock_footage" else [],
                     "search_query": fq if vtype == "stock_footage" else "",
                     "accent": "gold",
