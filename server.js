@@ -18,6 +18,13 @@ const GITHUB_BRANCH = (process.env.GITHUB_BRANCH || "main").trim();
 const APP_ACCESS_PIN = (process.env.APP_ACCESS_PIN || "").trim();
 
 const ALLOWED_EXTS = new Set([".mp3", ".wav", ".m4a", ".aac", ".flac"]);
+const VALID_THEMES = new Set([
+  "cinematic_dark",
+  "vox_colorful",
+  "editorial_paper",
+  "vibrant_gradient",
+  "minimal_light"
+]);
 const UPLOAD_TMP_DIR = path.join(os.tmpdir(), "doc_uploads");
 fs.mkdirSync(UPLOAD_TMP_DIR, { recursive: true });
 
@@ -141,6 +148,8 @@ app.post("/api/jobs", requirePin, upload.single("audio"), async (req, res) => {
     const docTitle = String(req.body?.title || "").trim().slice(0, 120);
     const subtitles = String(req.body?.subtitles || "true") === "false" ? "false" : "true";
     const bgMusic = String(req.body?.bg_music || "true") === "false" ? "false" : "true";
+    const rawTheme = String(req.body?.video_theme || "cinematic_dark").trim();
+    const videoTheme = VALID_THEMES.has(rawTheme) ? rawTheme : "cinematic_dark";
 
     const relRes = await ghRequest("/releases", {
       method: "POST",
@@ -149,7 +158,12 @@ app.post("/api/jobs", requirePin, upload.single("audio"), async (req, res) => {
         tag_name: jobId,
         target_commitish: GITHUB_BRANCH,
         name: docTitle ? `${docTitle} (${jobId})` : jobId,
-        body: JSON.stringify({ job_id: jobId, title: docTitle, created_at: new Date().toISOString() }),
+        body: JSON.stringify({
+          job_id: jobId,
+          title: docTitle,
+          video_theme: videoTheme,
+          created_at: new Date().toISOString()
+        }),
         draft: false,
         prerelease: false
       })
@@ -174,6 +188,7 @@ app.post("/api/jobs", requirePin, upload.single("audio"), async (req, res) => {
     const initialStatus = {
       job_id: jobId,
       title: docTitle,
+      video_theme: videoTheme,
       stage_key: "uploading_audio",
       stage: "Uploading Audio",
       percent: 5,
@@ -193,7 +208,8 @@ app.post("/api/jobs", requirePin, upload.single("audio"), async (req, res) => {
           job_id: jobId,
           title: docTitle,
           subtitles,
-          bg_music: bgMusic
+          bg_music: bgMusic,
+          video_theme: videoTheme
         }
       })
     });
