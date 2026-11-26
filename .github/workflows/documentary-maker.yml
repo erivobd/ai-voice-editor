@@ -23,7 +23,7 @@ on:
         default: "true"
         type: string
       video_theme:
-        description: "Animation Theme (cinematic_dark, vox_colorful, editorial_paper, vibrant_gradient, minimal_light)"
+        description: "Animation Theme (cinematic_dark, vox_colorful, editorial_paper, vibrant_gradient, minimal_light, crimson_noir)"
         required: false
         default: "cinematic_dark"
         type: string
