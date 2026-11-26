@@ -15,27 +15,38 @@ FONT_STACK = "Hind Siliguri, Noto Sans Bengali, Noto Sans, sans-serif"
 THEME_PALETTES = {
     "cinematic_dark": {
         "bg1": "#08101c", "bg2": "#0f2035", "accent": "#facc15",
-        "accent2": "#38bdf8", "text": "#f8fafc", "muted": "#cbd5e1",
+        "accent_text": "#090d16", "accent2": "#38bdf8",
+        "text": "#f8fafc", "muted": "#cbd5e1",
         "card_bg": "#0f172a", "is_light": False,
+    },
+    "crimson_noir": {
+        "bg1": "#09090b", "bg2": "#1a0609", "accent": "#dc2626",
+        "accent_text": "#ffffff", "accent2": "#ffffff",
+        "text": "#ffffff", "muted": "#d4d4d8",
+        "card_bg": "#121216", "is_light": False,
     },
     "vox_colorful": {
         "bg1": "#fef08a", "bg2": "#fde047", "accent": "#dc2626",
-        "accent2": "#111827", "text": "#111827", "muted": "#374151",
+        "accent_text": "#ffffff", "accent2": "#111827",
+        "text": "#111827", "muted": "#374151",
         "card_bg": "#ffffff", "is_light": True,
     },
     "editorial_paper": {
         "bg1": "#f6f1e7", "bg2": "#ebe2d2", "accent": "#d97706",
-        "accent2": "#0f766e", "text": "#1c1917", "muted": "#57534e",
+        "accent_text": "#ffffff", "accent2": "#0f766e",
+        "text": "#1c1917", "muted": "#57534e",
         "card_bg": "#fffdf9", "is_light": True,
     },
     "vibrant_gradient": {
         "bg1": "#1e1b4b", "bg2": "#4c1d95", "accent": "#22d3ee",
-        "accent2": "#f472b6", "text": "#ffffff", "muted": "#e0e7ff",
+        "accent_text": "#0f172a", "accent2": "#f472b6",
+        "text": "#ffffff", "muted": "#e0e7ff",
         "card_bg": "#1e1b4b", "is_light": False,
     },
     "minimal_light": {
         "bg1": "#f8fafc", "bg2": "#e2e8f0", "accent": "#2563eb",
-        "accent2": "#10b981", "text": "#0f172a", "muted": "#475569",
+        "accent_text": "#ffffff", "accent2": "#10b981",
+        "text": "#0f172a", "muted": "#475569",
         "card_bg": "#ffffff", "is_light": True,
     },
 }
@@ -79,50 +90,85 @@ def _render_svg_to_png(svg_content, png_path, transparent=False):
     else:
         img = Image.new("RGB", (1920, 1080), (11, 17, 32))
         draw = ImageDraw.Draw(img)
-        draw.rectangle([120, 480, 1800, 488], fill=(250, 204, 21))
+        draw.rectangle([120, 480, 1800, 488], fill=(220, 38, 38))
     img.save(png_path)
     return png_path
 
 
 def _build_stock_overlay_svg(scene, palette):
+    """Editorial badge tag + bold kinetic headline + optional pill callouts (no bulky box, no watermark)."""
     g = scene.get("graphic") or {}
     heading = (g.get("heading") or scene.get("overlay_headline") or "").strip()
     subheading = (g.get("subheading") or scene.get("overlay_subtext") or "").strip()
-    if not heading or scene.get("rapid_cut"):
+    items = g.get("items") or []
+
+    # Skip rapid cuts or scenes without an explicit key-point headline
+    if not heading or scene.get("rapid_cut") or not scene.get("show_overlay", True):
         return None
 
-    accent = "#ef4444" if scene.get("accent") == "red" else palette["accent"]
-    box_fill = palette["card_bg"]
-    stroke_col = "#000000" if palette["is_light"] else "#ffffff"
+    accent = palette["accent"]
+    accent_text = palette["accent_text"]
     sid = int(scene.get("scene_id", 1))
 
-    if sid % 2 == 1:
-        sub_svg = ""
-        if subheading:
-            sub_svg = (
-                f'<text x="960" y="182" text-anchor="middle" fill="{accent}" '
-                f'font-family="{FONT_STACK}" font-size="34" font-weight="600">{_esc(subheading[:54])}</text>'
+    # Optional pill callouts near the bottom
+    pills_svg = ""
+    if items:
+        pill_els = []
+        x_cur = 96
+        for raw_it in items[:2]:
+            txt = str(raw_it).strip()[:28]
+            if not txt:
+                continue
+            w = max(210, min(460, len(txt) * 18 + 80))
+            pill_els.append(
+                f'<g transform="translate({x_cur}, 940)">'
+                f'<rect x="0" y="0" width="{w}" height="62" rx="31" fill="#09090b" fill-opacity="0.78" stroke="{accent}" stroke-width="2.5"/>'
+                f'<circle cx="30" cy="31" r="7" fill="{accent}"/>'
+                f'<text x="52" y="42" fill="#ffffff" font-family="{FONT_STACK}" font-size="28" font-weight="700">{_esc(txt)}</text>'
+                f'</g>'
             )
-        box_h = 152 if subheading else 104
+            x_cur += w + 20
+        pills_svg = "".join(pill_els)
+
+    badge_text = (subheading[:36] if subheading else f"মূল তথ্য").strip()
+    badge_w = max(190, min(580, len(badge_text) * 17 + 64))
+
+    if sid % 2 == 1:
+        # Top-left editorial badge + bold headline over subtle gradient
         return f"""<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
-  <rect x="260" y="56" width="1400" height="{box_h}" rx="20" fill="{box_fill}" fill-opacity="0.88" stroke="{stroke_col}" stroke-opacity="0.16" stroke-width="2"/>
-  <rect x="900" y="56" width="120" height="6" rx="3" fill="{accent}"/>
-  <text x="960" y="128" text-anchor="middle" fill="{palette["text"]}" font-family="{FONT_STACK}" font-size="52" font-weight="700">{_esc(heading[:42])}</text>
-  {sub_svg}
+  <defs>
+    <linearGradient id="topFade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#000000" stop-opacity="0.62"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="txtShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000000" flood-opacity="0.85"/>
+    </filter>
+  </defs>
+  <rect x="0" y="0" width="1920" height="290" fill="url(#topFade)"/>
+  <rect x="96" y="72" width="{badge_w}" height="48" rx="8" fill="{accent}"/>
+  <circle cx="122" cy="96" r="6" fill="{accent_text}"/>
+  <text x="142" y="106" fill="{accent_text}" font-family="{FONT_STACK}" font-size="26" font-weight="700">{_esc(badge_text)}</text>
+  <text x="96" y="192" fill="#ffffff" font-family="{FONT_STACK}" font-size="60" font-weight="700" filter="url(#txtShadow)">{_esc(heading[:40])}</text>
+  {pills_svg}
 </svg>"""
     else:
-        sub_svg = ""
-        if subheading:
-            sub_svg = (
-                f'<text x="128" y="182" fill="{accent}" '
-                f'font-family="{FONT_STACK}" font-size="30" font-weight="600">{_esc(subheading[:48])}</text>'
-            )
-        box_h = 160 if subheading else 110
+        # Centered kinetic callout near lower-third (clean, high-impact)
+        bx = 960 - (badge_w // 2)
         return f"""<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
-  <rect x="84" y="68" width="900" height="{box_h}" rx="18" fill="{box_fill}" fill-opacity="0.90" stroke="{stroke_col}" stroke-opacity="0.18" stroke-width="2"/>
-  <rect x="84" y="88" width="10" height="{box_h - 40}" rx="5" fill="{accent}"/>
-  <text x="128" y="132" fill="{palette["text"]}" font-family="{FONT_STACK}" font-size="42" font-weight="700">{_esc(heading[:38])}</text>
-  {sub_svg}
+  <defs>
+    <linearGradient id="botFade" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0%" stop-color="#000000" stop-opacity="0.68"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="txtShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000000" flood-opacity="0.88"/>
+    </filter>
+  </defs>
+  <rect x="0" y="760" width="1920" height="320" fill="url(#botFade)"/>
+  <rect x="{bx}" y="818" width="{badge_w}" height="46" rx="8" fill="{accent}"/>
+  <text x="960" y="850" text-anchor="middle" fill="{accent_text}" font-family="{FONT_STACK}" font-size="25" font-weight="700">{_esc(badge_text)}</text>
+  <text x="960" y="936" text-anchor="middle" fill="#ffffff" font-family="{FONT_STACK}" font-size="62" font-weight="700" filter="url(#txtShadow)">{_esc(heading[:42])}</text>
 </svg>"""
 
 
@@ -130,7 +176,7 @@ def _build_fallback_svg_card(scene, palette):
     g = scene.get("graphic") or {}
     heading = g.get("heading") or scene.get("overlay_headline") or "ডকুমেন্টারি তথ্য"
     subheading = g.get("subheading") or scene.get("overlay_subtext") or ""
-    accent = "#ef4444" if scene.get("accent") == "red" else palette["accent"]
+    accent = palette["accent"]
     h_lines = _wrap_text(heading, 28)
     sub_lines = _wrap_text(subheading, 48)
 
@@ -182,11 +228,11 @@ def create_motion_graphics(scene_plan):
             dur = max(1.5, float(scene.get("duration") or (float(scene.get("end", 5.0)) - float(scene.get("start", 0.0)))))
             remotion_jobs.append({
                 "scene_id": sid,
-                "kind": g.get("kind", "title_card"),
+                "kind": g.get("kind", "visual_callout"),
                 "heading": g.get("heading") or scene.get("overlay_headline") or f"অধ্যায় {sid}",
                 "subheading": g.get("subheading") or scene.get("overlay_subtext") or "",
                 "items": g.get("items") or [],
-                "accent": scene.get("accent", "gold"),
+                "accent": palette["accent"],
                 "color_grade": color_grade,
                 "video_theme": video_theme,
                 "duration": round(dur, 2),

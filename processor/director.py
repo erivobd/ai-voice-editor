@@ -26,7 +26,7 @@ OPENROUTER_MODELS = [
 ]
 
 VALID_GRADES = {"cinematic_teal", "warm_history", "cool_science", "neutral_doc"}
-VALID_GRAPHIC_KINDS = {"title_card", "stat_chart", "timeline", "map_marker"}
+VALID_GRAPHIC_KINDS = {"flowchart", "route_map", "visual_callout", "stat_chart"}
 
 
 def _extract_json(text: str) -> Dict[str, Any]:
@@ -46,7 +46,7 @@ def _extract_json(text: str) -> Dict[str, Any]:
 def _build_prompt(transcript_text: str, total_duration: float, title: str = "") -> str:
     title_hint = f"Documentary Title: {title}\n" if title else ""
     return f"""
-You are an elite documentary video director inspired by high-retention engineering & explainer channels.
+You are an elite documentary video director inspired by high-retention Vox & editorial explainer channels.
 {title_hint}Create a dynamic, visually varied scene plan for a {total_duration:.1f}s documentary from this timestamped transcript:
 
 TRANSCRIPT:
@@ -54,14 +54,22 @@ TRANSCRIPT:
 
 CRITICAL VISUAL & PACING RULES:
 1. RAPID-CUT & LIST-SYNC RULE (HIGHEST PRIORITY):
-   - Whenever the narrator lists multiple distinct visual subjects separated by commas, "এবং", "আর", "ও", or "and" (e.g., "নীল সমুদ্র, ঘন সবুজ অরণ্য আর বরফে ঢাকা পাহাড়" or "আধুনিক শহর, দ্রুতগতির প্রযুক্তি এবং মহাকাশজয়"), DO NOT combine them into one long scene.
-   - Immediately split them into back-to-back rapid-cut "stock_footage" scenes (1.2s to 2.8s each) synced tightly to the exact spoken moment of each item, and set `"rapid_cut": true` on those scenes.
-   - Give each split scene its own specific English visual query matching that exact noun (e.g., "deep blue ocean waves aerial", "dense green forest canopy drone", "snow covered mountain peaks").
+   - Whenever the narrator lists multiple distinct visual subjects separated by commas, "এবং", "আর", "ও", or "and", DO NOT combine them into one long scene.
+   - Immediately split them into back-to-back rapid-cut "stock_footage" scenes (1.2s to 2.8s each) synced tightly to the exact spoken moment of each item, and set `"rapid_cut": true` and `"show_overlay": false`.
+   - Give each split scene its own specific English visual query matching that exact noun.
 2. NEVER repeat the exact same stock search query or visual subject across scenes. Give 2 unique, specific English search queries per stock_footage scene in "search_queries".
-3. For normal narration (non-rapid-cut), keep scene durations 3.5s to 7.0s and alternate with "motion_graphic" scenes (stat_chart, timeline, map_marker, title_card) so no more than 2 normal stock_footage scenes appear in a row.
-4. Cover 0.0s to {total_duration:.1f}s continuously with zero gaps, keeping scene start/end timestamps aligned with the transcript.
-5. For "graphic" -> "heading", "subheading", and "items": write concise, punchy text in the SAME language as the transcript (Bengali if the transcript is Bengali, English if English). Keep heading <= 34 chars and subheading <= 54 chars.
-6. For "stat_chart" scenes, format each item in "items" as "Label: number" (e.g., ["২০০মি: 35", "৪০০মি: 58", "৬০০মি: 82", "৮০০মি: 100"]).
+3. OCCASIONAL ON-SCREEN KEY-POINT CALLOUTS (NOT CONTINUOUS SUBTITLES):
+   - For "stock_footage" scenes, set `"show_overlay": true` ONLY on important emphasis moments (roughly 40%-50% of normal stock scenes) so punchy key phrases pop up occasionally rather than cluttering every shot.
+   - On scenes with `"show_overlay": true`, provide a short badge label in `subheading` (<= 24 chars), a bold key phrase in `heading` (<= 34 chars), and optionally 1-2 short pill tags in `items`.
+4. EDITORIAL MOTION GRAPHICS:
+   - Alternate normal stock_footage scenes (3.5s to 7.0s) with "motion_graphic" scenes so no more than 2 normal stock_footage scenes appear in a row.
+   - Choose `graphic.kind` from ONLY these 4 animated templates:
+     * "flowchart" — step-by-step cause/effect or process (3-4 short steps in `items`)
+     * "route_map" — central hub connected to 3-4 locations/concepts in `items`
+     * "visual_callout" — bold headline with 2-4 pill callout points in `items`
+     * "stat_chart" — animated data bars, format each item as "Label: number" (e.g., ["ধাপ ১: 35", "ধাপ ২: 78", "ধাপ ৩: 100"])
+5. Cover 0.0s to {total_duration:.1f}s continuously with zero gaps, keeping scene start/end timestamps aligned with the transcript.
+6. Write all `heading`, `subheading`, and `items` in the SAME language as the transcript (Bengali if Bengali, English if English).
 7. Choose "color_grade" from: "cinematic_teal", "warm_history", "cool_science", "neutral_doc".
 
 Return ONLY valid JSON with this exact schema:
@@ -75,58 +83,28 @@ Return ONLY valid JSON with this exact schema:
       "end": 5.0,
       "visual_type": "stock_footage",
       "rapid_cut": false,
+      "show_overlay": true,
       "search_queries": ["night sky stars milky way timelapse", "deep space cosmos stars wide"],
-      "accent": "gold",
       "graphic": {{
-        "kind": "title_card",
-        "heading": "রাতের আকাশ",
-        "subheading": "মহাবিশ্বের অসংখ্য তারার মাঝে পৃথিবী",
-        "items": ["অসীম মহাবিশ্ব", "আমাদের আবাসস্থল"]
+        "kind": "visual_callout",
+        "heading": "রাতের আকাশের অজানা রহস্য",
+        "subheading": "অধ্যায় ০১ // সূচনা",
+        "items": ["১০০% অনন্য", "অসীম মহাবিশ্ব"]
       }}
     }},
     {{
       "scene_id": 2,
       "start": 5.0,
-      "end": 6.8,
-      "visual_type": "stock_footage",
-      "rapid_cut": true,
-      "search_queries": ["deep blue ocean waves aerial view", "vast blue sea horizon drone"],
-      "accent": "gold",
+      "end": 10.0,
+      "visual_type": "motion_graphic",
+      "rapid_cut": false,
+      "show_overlay": false,
+      "search_queries": [],
       "graphic": {{
-        "kind": "title_card",
-        "heading": "সুবিশাল সমুদ্র",
-        "subheading": "",
-        "items": []
-      }}
-    }},
-    {{
-      "scene_id": 3,
-      "start": 6.8,
-      "end": 8.6,
-      "visual_type": "stock_footage",
-      "rapid_cut": true,
-      "search_queries": ["dense green rainforest canopy aerial", "lush green jungle trees drone"],
-      "accent": "gold",
-      "graphic": {{
-        "kind": "title_card",
-        "heading": "ঘন সবুজ অরণ্য",
-        "subheading": "",
-        "items": []
-      }}
-    }},
-    {{
-      "scene_id": 4,
-      "start": 8.6,
-      "end": 10.5,
-      "visual_type": "stock_footage",
-      "rapid_cut": true,
-      "search_queries": ["snow covered mountain peaks aerial", "himalayas snowy mountain ridge"],
-      "accent": "gold",
-      "graphic": {{
-        "kind": "title_card",
-        "heading": "বরফে ঢাকা পাহাড়",
-        "subheading": "",
-        "items": []
+        "kind": "flowchart",
+        "heading": "কীভাবে এই প্রক্রিয়া কাজ করে?",
+        "subheading": "বিশ্লেষণ // ফ্লোচার্ট",
+        "items": ["প্রথম ধাপ: শক্তির উৎস", "দ্বিতীয় ধাপ: তাপমাত্রার ভারসাম্য", "তৃতীয় ধাপ: প্রাণের বিকাশ"]
       }}
     }}
   ]
@@ -209,7 +187,7 @@ def _call_gemini(prompt: str, api_key: str) -> Dict[str, Any]:
     from google import genai
 
     client = genai.Client(api_key=api_key)
-    models = ["gemini-3.0-flash", "gemini-2.5-flash", "gemini-2.0-flash"]
+    models = ["gemini-2.5-flash", "gemini-2.0-flash"]
     last_err = None
     for m in models:
         try:
@@ -228,11 +206,7 @@ def _normalize_graphic(sc: Dict[str, Any], idx: int) -> Dict[str, Any]:
     g = sc.get("graphic") if isinstance(sc.get("graphic"), dict) else {}
     kind = g.get("kind") or ""
     if kind not in VALID_GRAPHIC_KINDS:
-        ov_style = sc.get("overlay_style", "")
-        if ov_style == "stat_bars":
-            kind = "stat_chart"
-        else:
-            kind = ["title_card", "stat_chart", "timeline", "map_marker"][idx % 4]
+        kind = ["visual_callout", "flowchart", "route_map", "stat_chart"][idx % 4]
 
     heading = str(g.get("heading") or sc.get("overlay_headline") or f"অধ্যায় {idx + 1}").strip()[:48]
     subheading = str(g.get("subheading") or sc.get("overlay_subtext") or "").strip()[:72]
@@ -285,10 +259,10 @@ def _enforce_variety_and_pacing(raw_scenes: List[Dict[str, Any]], total_duration
                 "end": round(min((i + 1) * step, total_duration), 2),
                 "visual_type": "motion_graphic" if i % 3 == 2 else "stock_footage",
                 "rapid_cut": False,
+                "show_overlay": (i % 2 == 0),
                 "search_queries": [fallback_queries[i % len(fallback_queries)]],
-                "accent": "red" if i % 4 == 3 else "gold",
                 "graphic": {
-                    "kind": "title_card",
+                    "kind": ["visual_callout", "flowchart", "route_map", "stat_chart"][i % 4],
                     "heading": f"অধ্যায় {i + 1}",
                     "subheading": "",
                     "items": [],
@@ -375,7 +349,10 @@ def _enforce_variety_and_pacing(raw_scenes: List[Dict[str, Any]], total_duration
                     queries.append(fq)
 
         graphic = _normalize_graphic(sc, len(cleaned))
-        accent = "red" if sc.get("accent") == "red" else "gold"
+        if "show_overlay" in sc:
+            show_overlay = bool(sc.get("show_overlay")) and not is_rapid
+        else:
+            show_overlay = (not is_rapid) and (len(cleaned) % 2 == 0)
 
         cleaned.append({
             "scene_id": len(cleaned) + 1,
@@ -385,13 +362,13 @@ def _enforce_variety_and_pacing(raw_scenes: List[Dict[str, Any]], total_duration
             "visual_type": vtype,
             "type": vtype,
             "rapid_cut": is_rapid,
+            "show_overlay": show_overlay,
             "search_queries": queries,
             "search_query": queries[0] if queries else "",
-            "accent": accent,
             "motion_effect": sc.get("motion_effect") or motions[idx % len(motions)],
             "graphic": graphic,
-            "overlay_headline": graphic["heading"],
-            "overlay_subtext": graphic["subheading"],
+            "overlay_headline": graphic["heading"] if show_overlay else "",
+            "overlay_subtext": graphic["subheading"] if show_overlay else "",
         })
         cursor = end
 
@@ -418,17 +395,17 @@ def _enforce_variety_and_pacing(raw_scenes: List[Dict[str, Any]], total_duration
                     "visual_type": vtype,
                     "type": vtype,
                     "rapid_cut": False,
+                    "show_overlay": (s_idx % 2 == 0),
                     "search_queries": [fq] if vtype == "stock_footage" else [],
                     "search_query": fq if vtype == "stock_footage" else "",
-                    "accent": "gold",
                     "motion_effect": motions[s_idx % len(motions)],
                     "graphic": {
-                        "kind": "title_card",
+                        "kind": ["visual_callout", "flowchart", "route_map", "stat_chart"][s_idx % 4],
                         "heading": f"অধ্যায় {s_idx + 1}",
                         "subheading": "",
                         "items": [],
                     },
-                    "overlay_headline": f"অধ্যায় {s_idx + 1}",
+                    "overlay_headline": f"অধ্যায় {s_idx + 1}" if s_idx % 2 == 0 else "",
                     "overlay_subtext": "",
                 })
                 cursor = end
