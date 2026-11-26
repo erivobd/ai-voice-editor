@@ -53,22 +53,20 @@ def _render_scene_clip(scene, out_clip, grade_filter):
 
     if footage_path and Path(footage_path).exists():
         if overlay_path and Path(overlay_path).exists():
-            ov_in = min(0.2, max(0.0, dur * 0.1))
-            ov_out = max(ov_in + 0.4, dur - 0.5)
+            ov_p = Path(overlay_path)
             fc = (
                 f"[0:v]scale=1920:1080:force_original_aspect_ratio=increase,"
                 f"crop=1920:1080,fps=30,format=yuv420p,{grade_filter}[base];"
-                f"[1:v]format=rgba,fade=t=in:st={ov_in:.2f}:d=0.3:alpha=1,"
-                f"fade=t=out:st={ov_out:.2f}:d=0.3:alpha=1[ov];"
-                f"[base][ov]overlay=x=0:y='if(lt(t,0.5),-22*(1-(t/0.5)),0)':shortest=1,"
+                f"[1:v]fps=30,format=rgba[ov];"
+                f"[base][ov]overlay=x=0:y=0:shortest=1,"
                 f"fade=t=in:st=0:d={fade_d:.3f},fade=t=out:st={fade_out_st:.3f}:d={fade_d:.3f},format=yuv420p[vout]"
             )
+            ov_inputs = ["-i", str(ov_p)] if ov_p.suffix.lower() in (".mov", ".webm", ".mp4") else ["-loop", "1", "-t", f"{dur:.3f}", "-i", str(ov_p)]
             run_ffmpeg([
                 "ffmpeg", "-y",
                 "-stream_loop", "-1",
                 "-i", str(footage_path),
-                "-loop", "1", "-t", f"{dur:.3f}",
-                "-i", str(overlay_path),
+                *ov_inputs,
                 "-t", f"{dur:.3f}",
                 "-an",
                 "-filter_complex", fc,

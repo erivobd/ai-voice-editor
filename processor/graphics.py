@@ -1,7 +1,5 @@
-import html
 import os
 import re
-import shutil
 import subprocess
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
@@ -9,45 +7,52 @@ from status import update_status
 
 WORK = Path(os.environ.get("WORK_DIR", "/tmp/doc_job"))
 REPO_ROOT = Path(__file__).resolve().parent.parent
-FONT_STACK = "Hind Siliguri, Noto Sans Bengali, Noto Sans, sans-serif"
 
-FONT_CANDIDATES = [
+FONT_BOLD_CANDIDATES = [
     REPO_ROOT / "assets" / "fonts" / "HindSiliguri-Bold.ttf",
+    Path("/usr/local/share/fonts/HindSiliguri-Bold.ttf"),
     Path("/usr/share/fonts/truetype/noto/NotoSansBengali-Bold.ttf"),
     Path("/usr/share/fonts/opentype/noto/NotoSansBengali-Bold.ttf"),
     Path("/usr/share/fonts/truetype/beng/kalpurush.ttf"),
 ]
 
+FONT_REG_CANDIDATES = [
+    REPO_ROOT / "assets" / "fonts" / "HindSiliguri-SemiBold.ttf",
+    REPO_ROOT / "assets" / "fonts" / "HindSiliguri-Regular.ttf",
+    Path("/usr/local/share/fonts/HindSiliguri-SemiBold.ttf"),
+    Path("/usr/share/fonts/truetype/noto/NotoSansBengali-Regular.ttf"),
+]
+
 THEME_PALETTES = {
     "crimson_noir": {
-        "bg1": "#09090b", "bg2": "#1c060b", "accent": "#dc2626",
-        "accent2": "#ffffff", "text": "#ffffff", "muted": "#e4e4e7",
-        "card_bg": "#141418", "pill_bg": "#18181b", "is_light": False,
+        "bg1": (9, 9, 11), "bg2": (32, 6, 12), "accent": (220, 38, 38),
+        "text": (255, 255, 255), "muted": (228, 228, 231),
+        "card_bg": (18, 18, 22, 232), "pill_bg": (14, 14, 18, 238), "is_light": False,
     },
     "cinematic_dark": {
-        "bg1": "#08101c", "bg2": "#0f2035", "accent": "#facc15",
-        "accent2": "#38bdf8", "text": "#f8fafc", "muted": "#cbd5e1",
-        "card_bg": "#0f172a", "pill_bg": "#1e293b", "is_light": False,
+        "bg1": (8, 16, 28), "bg2": (15, 32, 53), "accent": (250, 204, 21),
+        "text": (248, 250, 252), "muted": (203, 213, 225),
+        "card_bg": (15, 23, 42, 232), "pill_bg": (15, 23, 42, 238), "is_light": False,
     },
     "vox_colorful": {
-        "bg1": "#fef08a", "bg2": "#fde047", "accent": "#dc2626",
-        "accent2": "#111827", "text": "#111827", "muted": "#374151",
-        "card_bg": "#ffffff", "pill_bg": "#111827", "is_light": True,
+        "bg1": (254, 240, 138), "bg2": (253, 224, 71), "accent": (220, 38, 38),
+        "text": (17, 24, 39), "muted": (55, 65, 81),
+        "card_bg": (255, 255, 255, 238), "pill_bg": (17, 24, 39, 238), "is_light": True,
     },
     "editorial_paper": {
-        "bg1": "#f6f1e7", "bg2": "#ebe2d2", "accent": "#d97706",
-        "accent2": "#0f766e", "text": "#1c1917", "muted": "#57534e",
-        "card_bg": "#fffdf9", "pill_bg": "#1c1917", "is_light": True,
+        "bg1": (246, 241, 231), "bg2": (235, 226, 210), "accent": (217, 119, 6),
+        "text": (28, 25, 23), "muted": (87, 83, 78),
+        "card_bg": (255, 253, 249, 238), "pill_bg": (28, 25, 23, 238), "is_light": True,
     },
     "vibrant_gradient": {
-        "bg1": "#1e1b4b", "bg2": "#4c1d95", "accent": "#22d3ee",
-        "accent2": "#f472b6", "text": "#ffffff", "muted": "#e0e7ff",
-        "card_bg": "#1e1b4b", "pill_bg": "#0f172a", "is_light": False,
+        "bg1": (30, 27, 75), "bg2": (76, 29, 149), "accent": (34, 211, 238),
+        "text": (255, 255, 255), "muted": (224, 231, 255),
+        "card_bg": (30, 27, 75, 232), "pill_bg": (15, 23, 42, 238), "is_light": False,
     },
     "minimal_light": {
-        "bg1": "#f8fafc", "bg2": "#e2e8f0", "accent": "#2563eb",
-        "accent2": "#10b981", "text": "#0f172a", "muted": "#475569",
-        "card_bg": "#ffffff", "pill_bg": "#0f172a", "is_light": True,
+        "bg1": (248, 250, 252), "bg2": (226, 232, 240), "accent": (37, 99, 235),
+        "text": (15, 23, 42), "muted": (71, 85, 105),
+        "card_bg": (255, 255, 255, 238), "pill_bg": (15, 23, 42, 238), "is_light": True,
     },
 }
 
@@ -58,61 +63,163 @@ def _strip_chapter_and_hindi(text: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
-def _esc(text: str) -> str:
-    return html.escape(_strip_chapter_and_hindi(text))
+def _load_font(size: int, bold: bool = True):
+    candidates = FONT_BOLD_CANDIDATES if bold else FONT_REG_CANDIDATES + FONT_BOLD_CANDIDATES
+    for p in candidates:
+        if p.exists():
+            try:
+                return ImageFont.truetype(str(p), size=size)
+            except Exception:
+                continue
+    return ImageFont.load_default()
 
 
-def _wrap_text(text: str, max_chars=26):
-    cleaned = _strip_chapter_and_hindi(text)
-    words = cleaned.split()
-    lines, cur = [], []
-    length = 0
+def _text_size(draw: ImageDraw.ImageDraw, text: str, font) -> tuple:
+    bbox = draw.textbbox((0, 0), text, font=font)
+    return max(1, bbox[2] - bbox[0]), max(1, bbox[3] - bbox[1])
+
+
+def _wrap_by_pixel(draw: ImageDraw.ImageDraw, text: str, font, max_width: int, max_lines: int = 2) -> list:
+    words = _strip_chapter_and_hindi(text).split()
+    if not words:
+        return []
+    lines = []
+    cur = []
     for w in words:
-        if length + len(w) + (1 if cur else 0) > max_chars and cur:
+        trial = " ".join(cur + [w])
+        tw, _ = _text_size(draw, trial, font)
+        if tw <= max_width or not cur:
+            cur.append(w)
+        else:
             lines.append(" ".join(cur))
             cur = [w]
-            length = len(w)
-        else:
-            cur.append(w)
-            length += len(w) + (1 if cur else 0)
-    if cur:
+            if len(lines) >= max_lines:
+                break
+    if cur and len(lines) < max_lines:
         lines.append(" ".join(cur))
-    return lines[:3]
+    return lines[:max_lines]
 
 
-def _find_font_path():
-    for p in FONT_CANDIDATES:
-        if p.exists():
-            return str(p)
-    return None
+def _ease_out_cubic(t: float) -> float:
+    t = max(0.0, min(1.0, t))
+    return 1.0 - ((1.0 - t) ** 3)
 
 
-def _render_svg_to_png(svg_content: str, png_path: Path, transparent: bool = False) -> Path:
-    svg_path = png_path.with_suffix(".svg")
-    svg_path.write_text(svg_content, encoding="utf-8")
-
-    if shutil.which("rsvg-convert"):
-        proc = subprocess.run(
-            ["rsvg-convert", "-w", "1920", "-h", "1080", str(svg_path), "-o", str(png_path)],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-        )
-        if proc.returncode == 0 and png_path.exists() and png_path.stat().st_size > 500:
-            return png_path
-
-    if transparent:
-        img = Image.new("RGBA", (1920, 1080), (0, 0, 0, 0))
-    else:
-        img = Image.new("RGB", (1920, 1080), (12, 12, 16))
-        draw = ImageDraw.Draw(img)
-        font_path = _find_font_path()
-        font = ImageFont.truetype(font_path, 56) if font_path else ImageFont.load_default()
-        draw.rectangle([140, 260, 280, 270], fill=(220, 38, 38))
-        draw.text((140, 310), "ডকুমেন্টারি তথ্য", fill=(255, 255, 255), font=font)
-    img.save(png_path)
-    return png_path
+def _apply_alpha(rgba: tuple, mult: float) -> tuple:
+    r, g, b = rgba[:3]
+    a = rgba[3] if len(rgba) > 3 else 255
+    return (r, g, b, max(0, min(255, int(round(a * mult)))))
 
 
-def _build_stock_overlay_svg(scene: dict, palette: dict):
+def _draw_overlay_frame(
+    heading: str,
+    subheading: str,
+    items: list,
+    palette: dict,
+    accent: tuple,
+    t_sec: float,
+    dur_sec: float,
+) -> Image.Image:
+    img = Image.new("RGBA", (1920, 1080), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    font_head = _load_font(48, bold=True)
+    font_sub = _load_font(30, bold=False)
+    font_pill = _load_font(32, bold=True)
+
+    fade_out = 1.0
+    if dur_sec > 0.8 and t_sec > dur_sec - 0.35:
+        fade_out = max(0.0, (dur_sec - t_sec) / 0.35)
+
+    if heading:
+        p_head = _ease_out_cubic((t_sec - 0.05) / 0.40) * fade_out
+        if p_head > 0.01:
+            slide_y = int(round((1.0 - _ease_out_cubic((t_sec - 0.05) / 0.40)) * 28))
+            h_lines = _wrap_by_pixel(draw, heading, font_head, max_width=1360, max_lines=1)
+            main_h = h_lines[0] if h_lines else heading[:28]
+            hw, hh = _text_size(draw, main_h, font_head)
+            sw, sh = (0, 0)
+            sub_clean = subheading[:46] if subheading else ""
+            if sub_clean:
+                sw, sh = _text_size(draw, sub_clean, font_sub)
+
+            content_w = max(hw, sw)
+            box_w = max(560, min(1560, content_w + 130))
+            box_h = (hh + sh + 64) if sub_clean else (hh + 52)
+            box_x = (1920 - box_w) // 2
+            box_y = 52 + slide_y
+
+            border_col = _apply_alpha((255, 255, 255, 48) if not palette["is_light"] else (0, 0, 0, 48), p_head)
+            draw.rounded_rectangle(
+                [box_x, box_y, box_x + box_w, box_y + box_h],
+                radius=22,
+                fill=_apply_alpha(palette["card_bg"], p_head),
+                outline=border_col,
+                width=2,
+            )
+            draw.rounded_rectangle(
+                [box_x + 26, box_y + 22, box_x + 38, box_y + box_h - 22],
+                radius=6,
+                fill=_apply_alpha(accent, p_head),
+            )
+            draw.text(
+                (box_x + 60, box_y + 22),
+                main_h,
+                font=font_head,
+                fill=_apply_alpha(palette["text"], p_head),
+            )
+            if sub_clean:
+                draw.text(
+                    (box_x + 60, box_y + 28 + hh),
+                    sub_clean,
+                    font=font_sub,
+                    fill=_apply_alpha(accent, p_head),
+                )
+
+    if items:
+        cur_x = 110
+        base_pill_y = 885
+        pill_h = 74
+        for idx, it in enumerate(items[:3]):
+            label = it[:24]
+            if not label:
+                continue
+            pw_txt, ph_txt = _text_size(draw, label, font_pill)
+            pill_w = max(250, min(560, pw_txt + 96))
+            if cur_x + pill_w > 1810:
+                break
+
+            start_t = 0.28 + idx * 0.20
+            prog = _ease_out_cubic((t_sec - start_t) / 0.35)
+            alpha_m = prog * fade_out
+            if alpha_m > 0.01:
+                py = base_pill_y + int(round((1.0 - prog) * 32))
+                draw.rounded_rectangle(
+                    [cur_x, py, cur_x + pill_w, py + pill_h],
+                    radius=37,
+                    fill=_apply_alpha(palette["pill_bg"], alpha_m),
+                    outline=_apply_alpha(accent, alpha_m),
+                    width=3,
+                )
+                dot_r = 9
+                dot_cx = cur_x + 32
+                dot_cy = py + pill_h // 2
+                draw.ellipse(
+                    [dot_cx - dot_r, dot_cy - dot_r, dot_cx + dot_r, dot_cy + dot_r],
+                    fill=_apply_alpha(accent, alpha_m),
+                )
+                draw.text(
+                    (cur_x + 56, py + (pill_h - ph_txt) // 2 - 3),
+                    label,
+                    font=font_pill,
+                    fill=_apply_alpha((255, 255, 255), alpha_m),
+                )
+            cur_x += pill_w + 24
+
+    return img
+
+
+def _render_animated_overlay_mov(scene: dict, palette: dict, out_mov: Path, duration: float):
     if scene.get("rapid_cut"):
         return None
     g = scene.get("graphic") or {}
@@ -123,143 +230,124 @@ def _build_stock_overlay_svg(scene: dict, palette: dict):
     if not heading and not items:
         return None
 
-    accent = "#dc2626" if scene.get("accent") == "red" or palette == THEME_PALETTES["crimson_noir"] else palette["accent"]
-    box_fill = palette["card_bg"]
-    pill_bg = palette["pill_bg"]
-    stroke_col = "#000000" if palette["is_light"] else "#ffffff"
+    accent = (220, 38, 38) if scene.get("accent") == "red" else palette["accent"]
+    fps = 30
+    total_frames = max(30, int(round(duration * fps)))
 
-    parts = []
+    cmd = [
+        "ffmpeg", "-y",
+        "-f", "rawvideo",
+        "-vcodec", "rawvideo",
+        "-s", "1920x1080",
+        "-pix_fmt", "rgba",
+        "-r", str(fps),
+        "-i", "-",
+        "-c:v", "png",
+        "-pix_fmt", "rgba",
+        str(out_mov),
+    ]
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    assert proc.stdin is not None
 
-    if heading:
-        h_lines = _wrap_text(heading, 28)
-        main_h = h_lines[0]
-        box_w = max(560, min(1480, len(main_h) * 34 + 140))
-        box_x = (1920 - box_w) // 2
-        box_h = 148 if subheading else 104
-        parts.append(
-            f'<rect x="{box_x}" y="48" width="{box_w}" height="{box_h}" rx="20" '
-            f'fill="{box_fill}" fill-opacity="0.90" stroke="{stroke_col}" stroke-opacity="0.18" stroke-width="2"/>'
-        )
-        parts.append(
-            f'<rect x="{box_x + 26}" y="72" width="10" height="{box_h - 48}" rx="5" fill="{accent}"/>'
-        )
-        parts.append(
-            f'<text x="{box_x + 56}" y="114" fill="{palette["text"]}" '
-            f'font-family="{FONT_STACK}" font-size="44" font-weight="700">{_esc(main_h)}</text>'
-        )
-        if subheading:
-            parts.append(
-                f'<text x="{box_x + 56}" y="144" fill="{accent}" '
-                f'font-family="{FONT_STACK}" font-size="28" font-weight="600">{_esc(subheading[:44])}</text>'
-            )
+    cached_static_bytes = None
+    for f_idx in range(total_frames):
+        t_sec = f_idx / float(fps)
+        is_static_mid = (1.35 <= t_sec <= max(1.35, duration - 0.40))
+        if is_static_mid and cached_static_bytes is not None:
+            frame_bytes = cached_static_bytes
+        else:
+            frame_img = _draw_overlay_frame(heading, subheading, items, palette, accent, t_sec, duration)
+            frame_bytes = frame_img.tobytes()
+            if is_static_mid:
+                cached_static_bytes = frame_bytes
+        proc.stdin.write(frame_bytes)
 
-    if items:
-        cur_x = 110
-        pill_y = 890
-        pill_h = 68
-        for it in items:
-            label = it[:24]
-            pill_w = max(230, min(520, len(label) * 26 + 92))
-            if cur_x + pill_w > 1810:
-                break
-            parts.append(
-                f'<rect x="{cur_x}" y="{pill_y}" width="{pill_w}" height="{pill_h}" rx="34" '
-                f'fill="{pill_bg}" fill-opacity="0.92" stroke="{accent}" stroke-width="2.5"/>'
-            )
-            parts.append(
-                f'<circle cx="{cur_x + 30}" cy="{pill_y + pill_h // 2}" r="8" fill="{accent}"/>'
-            )
-            parts.append(
-                f'<text x="{cur_x + 52}" y="{pill_y + 44}" fill="#ffffff" '
-                f'font-family="{FONT_STACK}" font-size="30" font-weight="700">{_esc(label)}</text>'
-            )
-            cur_x += pill_w + 22
-
-    if not parts:
-        return None
-
-    return (
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">\n'
-        f'  {"".join(parts)}\n'
-        f'</svg>'
-    )
+    proc.stdin.close()
+    stderr_out = proc.stderr.read().decode("utf-8", errors="replace") if proc.stderr else ""
+    ret = proc.wait()
+    if ret != 0 or not out_mov.exists():
+        raise RuntimeError(f"Animated overlay render failed: {stderr_out[-800:]}")
+    return out_mov
 
 
-def _build_infographic_svg(scene: dict, palette: dict) -> str:
+def _build_infographic_png(scene: dict, palette: dict, png_path: Path) -> Path:
     g = scene.get("graphic") or {}
     kind = g.get("kind") or "title_card"
     heading = _strip_chapter_and_hindi(g.get("heading") or scene.get("overlay_headline") or "মূল তথ্য")
     subheading = _strip_chapter_and_hindi(g.get("subheading") or scene.get("overlay_subtext") or "")
     items = [_strip_chapter_and_hindi(x) for x in (g.get("items") or []) if _strip_chapter_and_hindi(x)][:4]
-    accent = "#dc2626" if scene.get("accent") == "red" or palette == THEME_PALETTES["crimson_noir"] else palette["accent"]
+    accent = (220, 38, 38) if scene.get("accent") == "red" else palette["accent"]
 
-    h_lines = _wrap_text(heading, 24)
-    heading_svg = "".join(
-        f'<text x="140" y="{250 + i * 86}" fill="{palette["text"]}" '
-        f'font-family="{FONT_STACK}" font-size="68" font-weight="700">{_esc(line)}</text>'
-        for i, line in enumerate(h_lines)
-    )
-    next_y = 250 + len(h_lines) * 86 + 18
-    sub_svg = ""
-    if subheading:
-        sub_svg = (
-            f'<text x="140" y="{next_y}" fill="{accent}" '
-            f'font-family="{FONT_STACK}" font-size="36" font-weight="600">{_esc(subheading[:48])}</text>'
+    img = Image.new("RGB", (1920, 1080), palette["bg1"])
+    draw = ImageDraw.Draw(img)
+
+    r1, g1, b1 = palette["bg1"]
+    r2, g2, b2 = palette["bg2"]
+    for y in range(0, 1080, 4):
+        ratio = y / 1080.0
+        col = (
+            int(r1 + (r2 - r1) * ratio),
+            int(g1 + (g2 - g1) * ratio),
+            int(b1 + (b2 - b1) * ratio),
         )
-        next_y += 64
+        draw.rectangle([0, y, 1920, y + 4], fill=col)
 
-    body_svg = ""
+    font_head = _load_font(68, bold=True)
+    font_sub = _load_font(36, bold=False)
+    font_pill = _load_font(34, bold=True)
+
+    draw.rounded_rectangle([140, 165, 290, 176], radius=5, fill=accent)
+
+    h_lines = _wrap_by_pixel(draw, heading, font_head, max_width=1580, max_lines=2)
+    cur_y = 215
+    for line in h_lines:
+        draw.text((140, cur_y), line, font=font_head, fill=palette["text"])
+        _, lh = _text_size(draw, line, font_head)
+        cur_y += lh + 18
+
+    if subheading:
+        draw.text((140, cur_y + 6), subheading[:48], font=font_sub, fill=accent)
+        _, sh = _text_size(draw, subheading[:48], font_sub)
+        cur_y += sh + 48
+    else:
+        cur_y += 32
+
     if kind == "stat_chart" and items:
-        rows = []
         for idx, raw_item in enumerate(items[:4]):
             parts = re.split(r"[:\-—]", raw_item, maxsplit=1)
             lbl = parts[0].strip()[:24] or f"তথ্য {idx + 1}"
             num_m = re.search(r"(\d+(?:\.\d+)?)", raw_item)
             pct = min(100.0, max(18.0, float(num_m.group(1)))) if num_m else min(95.0, 35.0 + idx * 18.0)
             val_txt = parts[1].strip()[:14] if len(parts) > 1 and parts[1].strip() else f"{int(pct)}%"
-            ry = next_y + 16 + idx * 112
-            bar_w = int((pct / 100.0) * 1150)
-            rows.append(
-                f'<text x="140" y="{ry}" fill="{palette["text"]}" font-family="{FONT_STACK}" font-size="32" font-weight="700">{_esc(lbl)}</text>'
-                f'<text x="1310" y="{ry}" text-anchor="end" fill="{accent}" font-family="{FONT_STACK}" font-size="32" font-weight="700">{_esc(val_txt)}</text>'
-                f'<rect x="140" y="{ry + 14}" width="1170" height="28" rx="14" fill="{palette["card_bg"]}" stroke="{accent}" stroke-opacity="0.35" stroke-width="2"/>'
-                f'<rect x="140" y="{ry + 14}" width="{bar_w}" height="28" rx="14" fill="{accent}"/>'
-            )
-        body_svg = "".join(rows)
+            ry = cur_y + idx * 116
+            if ry > 930:
+                break
+            draw.text((140, ry), lbl, font=font_pill, fill=palette["text"])
+            vw, _ = _text_size(draw, val_txt, font_pill)
+            draw.text((1320 - vw, ry), val_txt, font=font_pill, fill=accent)
+            draw.rounded_rectangle([140, ry + 48, 1320, ry + 78], radius=15, fill=palette["card_bg"][:3], outline=accent, width=2)
+            bar_end = 140 + int((pct / 100.0) * 1180)
+            draw.rounded_rectangle([140, ry + 48, bar_end, ry + 78], radius=15, fill=accent)
     elif items:
-        pills_svg = []
         px = 140
-        py = next_y + 20
+        py = cur_y + 10
+        pill_h = 78
         for it in items[:4]:
             txt = it[:26]
-            pw = max(280, min(620, len(txt) * 28 + 110))
+            tw, th = _text_size(draw, txt, font_pill)
+            pw = max(290, min(640, tw + 108))
             if px + pw > 1760:
                 px = 140
-                py += 92
+                py += 98
             if py > 920:
                 break
-            pills_svg.append(
-                f'<rect x="{px}" y="{py}" width="{pw}" height="72" rx="36" '
-                f'fill="{palette["pill_bg"]}" stroke="{accent}" stroke-width="2.5"/>'
-                f'<circle cx="{px + 34}" cy="{py + 36}" r="10" fill="{accent}"/>'
-                f'<text x="{px + 58}" y="{py + 47}" fill="#ffffff" font-family="{FONT_STACK}" font-size="32" font-weight="700">{_esc(txt)}</text>'
-            )
-            px += pw + 24
-        body_svg = "".join(pills_svg)
+            draw.rounded_rectangle([px, py, px + pw, py + pill_h], radius=39, fill=palette["pill_bg"][:3], outline=accent, width=3)
+            draw.ellipse([px + 26, py + pill_h // 2 - 10, px + 46, py + pill_h // 2 + 10], fill=accent)
+            draw.text((px + 62, py + (pill_h - th) // 2 - 3), txt, font=font_pill, fill=(255, 255, 255))
+            px += pw + 26
 
-    return f"""<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
-  <defs>
-    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="{palette["bg1"]}"/>
-      <stop offset="100%" stop-color="{palette["bg2"]}"/>
-    </linearGradient>
-  </defs>
-  <rect width="1920" height="1080" fill="url(#bgGrad)"/>
-  <rect x="140" y="165" width="140" height="9" rx="4.5" fill="{accent}"/>
-  {heading_svg}
-  {sub_svg}
-  {body_svg}
-</svg>"""
+    img.save(png_path, format="PNG")
+    return png_path
 
 
 def _render_animated_infographic_mp4(png_path: Path, out_mp4: Path, duration: float, scene_id: int) -> Path:
@@ -288,7 +376,7 @@ def _render_animated_infographic_mp4(png_path: Path, out_mp4: Path, duration: fl
 
 
 def create_motion_graphics(scene_plan: dict) -> dict:
-    update_status("creating_graphics", "FFmpeg + Pillow অ্যানিমেটেড ইনফোগ্রাফিক্স ও পিল ওভারলে তৈরি হচ্ছে...", percent=70)
+    update_status("creating_graphics", "FFmpeg + Pillow অ্যানিমেটেড ব্যাজ, হেডলাইন ও পিল তৈরি হচ্ছে...", percent=70)
 
     gfx_dir = WORK / "graphics"
     gfx_dir.mkdir(parents=True, exist_ok=True)
@@ -314,23 +402,21 @@ def create_motion_graphics(scene_plan: dict) -> dict:
         if scene.get("visual_type") == "motion_graphic" or not scene.get("footage_path"):
             card_png = gfx_dir / f"infographic_{sid:03d}.png"
             out_mp4 = gfx_dir / f"graphic_{sid:03d}.mp4"
-            svg = _build_infographic_svg(scene, palette)
-            _render_svg_to_png(svg, card_png, transparent=False)
+            _build_infographic_png(scene, palette, card_png)
             _render_animated_infographic_mp4(card_png, out_mp4, dur, sid)
             scene["graphic_video_path"] = str(out_mp4)
             scene["graphic_path"] = str(card_png)
             graphic_count += 1
         else:
-            ov_svg = _build_stock_overlay_svg(scene, palette)
-            if ov_svg:
-                ov_path = gfx_dir / f"overlay_{sid:03d}.png"
-                _render_svg_to_png(ov_svg, ov_path, transparent=True)
-                scene["overlay_path"] = str(ov_path)
+            ov_mov = gfx_dir / f"overlay_{sid:03d}.mov"
+            res_mov = _render_animated_overlay_mov(scene, palette, ov_mov, dur)
+            if res_mov and res_mov.exists():
+                scene["overlay_path"] = str(res_mov)
                 overlay_count += 1
 
     update_status(
         "creating_graphics",
-        f"FFmpeg + Pillow এ {graphic_count}টি ইনফোগ্রাফিক ও {overlay_count}টি পিল/ব্যাজ ওভারলে তৈরি সম্পন্ন।",
+        f"FFmpeg + Pillow এ {graphic_count}টি ইনফোগ্রাফিক ও {overlay_count}টি অ্যানিমেটেড পিল/ব্যাজ ওভারলে তৈরি সম্পন্ন।",
         percent=76,
     )
     return scene_plan
