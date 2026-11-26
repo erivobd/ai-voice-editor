@@ -1,4 +1,4 @@
-# AI Documentary Production Studio (FFmpeg + Pillow v5.0)
+# AI Documentary Production Studio (Remotion + FFmpeg v5.1)
 
 ## v4 আপডেটসমূহ (৪ সেকেন্ডে ভিডিও থেমে যাওয়ার সমাধান)
 - **সম্পূর্ণ অডিও দৈর্ঘ্য লক (`director.py`):** Whisper সেগমেন্ট ছোট হলেও অডিও ফাইলের আসল সম্পূর্ণ দৈর্ঘ্য (`duration`) অনুযায়ী শেষ পর্যন্ত দৃশ্য ও গ্রাফিক্স তৈরি হয়।
@@ -64,3 +64,14 @@ Free API plans have changing model availability and rate limits. The app does no
 
 ### v5.0 validation
 Run `python -m py_compile processor/*.py`, `python -m unittest discover -s tests -v`, and `node --check server.js && node --check public/app.js`. A complete live render still requires the user's own free-tier API keys, stock-provider keys, GitHub configuration and remaining GitHub Actions allowance.
+
+## v5.1 In-app Remotion Editing Engine (new architecture)
+- **Rendering moved into the app's own worker:** the pipeline now builds a Remotion scene composition and renders the final MP4 in the same GitHub Actions worker. No external Remotion website or user-uploaded ZIP step is required.
+- **Reference-aligned architecture:** adds a Remotion 4.0.517 / React 19.2.3 renderer, dynamic `scene.json`, `Video.tsx`, and reusable Bengali-safe `kit.tsx`, aligned with the supplied Gemini sample's technical stack.
+- **Scene-based composition:** absolute AI director timestamps are converted to a 30 FPS timeline; Pexels/Pixabay clips are copied into Remotion's public assets and composed with animated graphic scenes, Bengali typography, and optional timed subtitles.
+- **Narration synchronization:** the source voice is decoded to 24 kHz mono PCM WAV for the composition; final voice and optional background music are muxed in the same pipeline.
+- **Local Bengali typography:** Hind Siliguri font files are bundled in the project; no external font fetch is needed during render.
+- **No external ZIP rendering handoff:** the Remotion project exists only as an internal worker build artifact. The user receives the final MP4 through the existing app workflow.
+
+### v5.1 validation scope
+Python syntax/tests and JavaScript syntax checks validate source-level behavior. A real 1080p render must still be exercised in GitHub Actions with the user's configured free-tier provider/media secrets and available worker minutes. The included renderer is a first integrated Remotion pass; visual quality must be assessed on a rendered sample before calling the editing upgrade complete.
