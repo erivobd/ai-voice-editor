@@ -17,6 +17,19 @@
   let currentJobId = localStorage.getItem("doc_maker_active_job") || "";
   let pollTimer = null;
 
+  // Theme selector handling
+  const themeGrid = $("theme-grid");
+  if (themeGrid) {
+    themeGrid.addEventListener("click", (e) => {
+      const card = e.target.closest(".theme-card");
+      if (!card) return;
+      themeGrid.querySelectorAll(".theme-card").forEach((c) => c.classList.remove("active"));
+      card.classList.add("active");
+      const themeInput = $("opt-theme");
+      if (themeInput) themeInput.value = card.getAttribute("data-theme") || "cinematic_dark";
+    });
+  }
+
   function showOnly(cardId) {
     ["pin-card", "upload-card", "history-card", "status-card", "result-card"].forEach((id) => {
       $(id).classList.toggle("hidden", id !== cardId);
@@ -117,6 +130,7 @@
     formData.append("title", $("title-input").value.trim());
     formData.append("subtitles", $("opt-subtitles").checked ? "true" : "false");
     formData.append("bg_music", $("opt-music").checked ? "true" : "false");
+    formData.append("video_theme", ($("opt-theme") && $("opt-theme").value) || "cinematic_dark");
 
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/jobs");

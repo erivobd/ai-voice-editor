@@ -48,6 +48,33 @@
       </label>
       <small id="audio-meta">সমর্থিত ফরম্যাট: MP3, WAV, M4A, AAC, FLAC (সর্বোচ্চ ১৫০ MB)</small>
 
+      <div class="theme-picker-wrap">
+        <span class="field-label">ভিডিও অ্যানিমেশন থিম</span>
+        <input type="hidden" id="opt-theme" name="video_theme" value="cinematic_dark">
+        <div class="theme-grid" id="theme-grid">
+          <button type="button" class="theme-card active" data-theme="cinematic_dark">
+            <span class="theme-swatch" style="background:linear-gradient(135deg,#08101c 55%,#facc15 100%);"></span>
+            <span class="theme-info"><strong>Cinematic Dark</strong><small>ডার্ক ও গোল্ড</small></span>
+          </button>
+          <button type="button" class="theme-card" data-theme="vox_colorful">
+            <span class="theme-swatch" style="background:linear-gradient(135deg,#fde047 55%,#dc2626 100%);"></span>
+            <span class="theme-info"><strong>Vox Colorful</strong><small>হলুদ ও লাল</small></span>
+          </button>
+          <button type="button" class="theme-card" data-theme="editorial_paper">
+            <span class="theme-swatch" style="background:linear-gradient(135deg,#f6f1e7 55%,#d97706 100%);"></span>
+            <span class="theme-info"><strong>Editorial Paper</strong><small>ক্লাসিক পেপার</small></span>
+          </button>
+          <button type="button" class="theme-card" data-theme="vibrant_gradient">
+            <span class="theme-swatch" style="background:linear-gradient(135deg,#4c1d95 55%,#22d3ee 100%);"></span>
+            <span class="theme-info"><strong>Vibrant Gradient</strong><small>রঙিন নিয়ন</small></span>
+          </button>
+          <button type="button" class="theme-card" data-theme="minimal_light">
+            <span class="theme-swatch" style="background:linear-gradient(135deg,#ffffff 55%,#2563eb 100%);"></span>
+            <span class="theme-info"><strong>Minimal Light</strong><small>ক্লিন হোয়াইট</small></span>
+          </button>
+        </div>
+      </div>
+
       <div class="toggles">
         <label class="checkbox-label"><input id="opt-subtitles" type="checkbox" checked> ভিডিওতে বাংলা/অটো সাবটাইটেল যুক্ত করুন</label>
         <label class="checkbox-label"><input id="opt-music" type="checkbox" checked> হালকা কপিরাইট-মুক্ত ব্যাকগ্রাউন্ড মিউজিক</label>
