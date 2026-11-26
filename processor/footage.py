@@ -105,7 +105,6 @@ def _search_pixabay_photo(query, api_key, used_ids):
 
 
 def _search_nasa_photo(query, used_ids):
-    """Free public-domain NASA image library (no API key required)."""
     try:
         r = requests.get(
             "https://images-api.nasa.gov/search",
@@ -136,7 +135,6 @@ def _search_nasa_photo(query, used_ids):
 
 
 def _search_wikimedia_photo(query, used_ids):
-    """Free Wikimedia Commons image search (no API key required)."""
     try:
         r = requests.get(
             "https://commons.wikimedia.org/w/api.php",
@@ -190,8 +188,30 @@ def _download_file(url, dest_path):
     return dest_path
 
 
+def _stream_trim_video(url, dest_mp4, needed_duration):
+    """Download only the needed seconds via FFmpeg HTTP range streaming to save time & disk."""
+    clip_len = max(2.5, round(float(needed_duration) + 0.5, 2))
+    cmd = [
+        "ffmpeg", "-y",
+        "-user_agent", USER_AGENT,
+        "-ss", "0.5",
+        "-i", url,
+        "-t", f"{clip_len:.2f}",
+        "-an",
+        "-vf", "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,fps=30",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+        "-pix_fmt", "yuv420p",
+        str(dest_mp4),
+    ]
+    proc = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=90)
+    if proc.returncode == 0 and dest_mp4.exists() and dest_mp4.stat().st_size > 15_000:
+        return dest_mp4
+
+    _download_file(url, dest_mp4)
+    return dest_mp4
+
+
 def _image_to_ken_burns_mp4(img_path, out_mp4, duration, scene_id):
-    """Normalizes any downloaded photo to 16:9 and applies cinematic Ken Burns motion."""
     prepared_jpg = img_path.with_suffix(".prepared.jpg")
     with Image.open(img_path) as im:
         im = ImageOps.exif_transpose(im).convert("RGB")
@@ -201,7 +221,6 @@ def _image_to_ken_burns_mp4(img_path, out_mp4, duration, scene_id):
     dur = max(1.5, float(duration))
     frames = max(45, int(round(dur * 30)))
 
-    # Alternate subtle zoom-in and zoom-out for natural documentary flow
     if scene_id % 2 == 1:
         zp = f"zoompan=z='min(zoom+0.0006,1.10)':d={frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1920x1080:fps=30"
     else:
@@ -249,13 +268,17 @@ def collect_stock_footage(scene_plan):
             scene["footage_path"] = None
             continue
 
-        queries = scene.get("search_queries", [])
+        queries = scene.get("search_queries") or []
+        if isinstance(queries, str):
+            queries = [queries]
+        if not queries and scene.get("search_query"):
+            queries = [scene["search_query"]]
+
         dest_mp4 = raw_dir / f"scene_{scene['scene_id']:03d}.mp4"
         media_kind = None
         found_id = None
         found_url = None
 
-        # 1. Try real HD stock videos first (Pexels if available, then Pixabay)
         for q in queries:
             found_id, found_url = _search_pexels_video(q, pexels_key, used_ids)
             if found_url:
@@ -266,7 +289,6 @@ def collect_stock_footage(scene_plan):
                 media_kind = "video"
                 break
 
-        # 2. If no video found, try high-res documentary photos (Pixabay -> Wikimedia -> NASA)
         if not found_url:
             for q in queries:
                 found_id, found_url = _search_pixabay_photo(q, pixabay_key, used_ids)
@@ -285,7 +307,7 @@ def collect_stock_footage(scene_plan):
         if found_url and found_id:
             try:
                 if media_kind == "video":
-                    _download_file(found_url, dest_mp4)
+                    _stream_trim_video(found_url, dest_mp4, scene.get("duration", 6.0))
                     video_count += 1
                 else:
                     tmp_img = raw_dir / f"scene_{scene['scene_id']:03d}_raw.img"
@@ -302,7 +324,6 @@ def collect_stock_footage(scene_plan):
                 scene["visual_type"] = "motion_graphic"
                 fallback_count += 1
         else:
-            # Never repeat footage: cleanly switch to custom motion graphics
             scene["footage_path"] = None
             scene["visual_type"] = "motion_graphic"
             fallback_count += 1

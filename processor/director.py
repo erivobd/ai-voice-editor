@@ -5,6 +5,12 @@ from typing import Any, Dict, List, Optional, Set, Union
 from urllib import request as urlrequest
 from urllib.error import HTTPError, URLError
 
+try:
+    from status import update_status
+except ImportError:
+    def update_status(*args, **kwargs):
+        pass
+
 
 OPENROUTER_MODELS = [
     "google/gemini-2.5-flash:free",
@@ -18,6 +24,9 @@ OPENROUTER_MODELS = [
     "nousresearch/hermes-3-llama-3.1-405b:free",
     "openrouter/free",
 ]
+
+VALID_GRADES = {"cinematic_teal", "warm_history", "cool_science", "neutral_doc"}
+VALID_GRAPHIC_KINDS = {"title_card", "stat_chart", "timeline", "map_marker"}
 
 
 def _extract_json(text: str) -> Dict[str, Any]:
@@ -41,43 +50,48 @@ You are an elite documentary video director inspired by high-retention engineeri
 {title_hint}Create a dynamic, visually varied scene plan for a {total_duration:.1f}s documentary from this transcript:
 
 TRANSCRIPT:
-{transcript_text}
+{transcript_text[:12000]}
 
 CRITICAL VISUAL & PACING RULES:
-1. NEVER repeat the exact same stock search query or visual subject across scenes. Every stock query must be unique and specific in English.
-2. NEVER put more than 2 stock_footage scenes in a row. Frequently alternate with motion_graphic scenes (stat_bars, callout_card, headline_card, comparison) so the video never feels like a serial slideshow of stock clips.
-3. Keep scene durations punchy and varied (3.5s to 7.0s), covering 0.0s to {total_duration:.1f}s with zero gaps or overlaps.
-4. For overlay_headline and overlay_subtext: write short, punchy text in the SAME language as the transcript (Bengali if the transcript is Bengali, English if English). Keep headline <= 32 chars and subtext <= 44 chars.
-5. For stat_bars scenes, provide 3 to 4 concise [label, numeric_value] pairs in "stat_items".
+1. NEVER repeat the exact same stock search query or visual subject across scenes. Give 2 unique, specific English search queries per stock_footage scene in "search_queries".
+2. NEVER put more than 2 "stock_footage" scenes in a row. Frequently alternate with "motion_graphic" scenes (stat_chart, timeline, map_marker, title_card) so the video feels like a real edited documentary, not a stock slideshow.
+3. Keep scene durations punchy and varied (4.0s to 7.5s), covering 0.0s to {total_duration:.1f}s continuously with zero gaps.
+4. For "graphic" -> "heading", "subheading", and "items": write concise, punchy text in the SAME language as the transcript (Bengali if the transcript is Bengali, English if English). Keep heading <= 34 chars and subheading <= 54 chars.
+5. For "stat_chart" scenes, format each item in "items" as "Label: number" (e.g., ["২০০মি: 35", "৪০০মি: 58", "৬০০মি: 82", "৮০০মি: 100"]).
+6. Choose "color_grade" from: "cinematic_teal", "warm_history", "cool_science", "neutral_doc".
 
 Return ONLY valid JSON with this exact schema:
 {{
+  "color_grade": "cinematic_teal",
+  "mood": "documentary_ambient",
   "scenes": [
     {{
       "scene_id": 1,
       "start": 0.0,
-      "end": 5.0,
-      "type": "stock_footage",
-      "overlay_style": "headline",
+      "end": 5.5,
+      "visual_type": "stock_footage",
+      "search_queries": ["aerial skyscraper dusk wide shot", "modern glass tower skyline twilight"],
       "accent": "gold",
-      "motion_effect": "slow_zoom_in",
-      "search_query": "aerial skyscraper dusk wide shot",
-      "overlay_headline": "৮২৮ মিটার উচ্চতা",
-      "overlay_subtext": "বিশ্বের সর্বোচ্চ স্থাপনা",
-      "stat_items": []
+      "graphic": {{
+        "kind": "title_card",
+        "heading": "৮২৮ মিটার উচ্চতা",
+        "subheading": "বিশ্বের সর্বোচ্চ স্থাপনার প্রকৌশল রহস্য",
+        "items": ["১৬৩ তলা কাঠামো", "উচ্চগতির বাতাস প্রতিরোধী"]
+      }}
     }},
     {{
       "scene_id": 2,
-      "start": 5.0,
-      "end": 10.5,
-      "type": "motion_graphic",
-      "overlay_style": "stat_bars",
+      "start": 5.5,
+      "end": 11.0,
+      "visual_type": "motion_graphic",
+      "search_queries": [],
       "accent": "gold",
-      "motion_effect": "slow_zoom_out",
-      "search_query": "",
-      "overlay_headline": "উচ্চতার সাথে বাতাসের চাপ",
-      "overlay_subtext": "উপরে বাতাস অনেক বেশি তীব্র",
-      "stat_items": [["২০০মি", 35], ["৪০০মি", 58], ["৬০০মি", 82], ["৮০০মি", 100]]
+      "graphic": {{
+        "kind": "stat_chart",
+        "heading": "উচ্চতার সাথে বাতাসের চাপ",
+        "subheading": "উপরে বাতাসের তীব্রতা দ্রুত বাড়ে",
+        "items": ["২০০মি: 35", "৪০০মি: 58", "৬০০মি: 82", "৮০০মি: 100"]
+      }}
     }}
   ]
 }}
@@ -136,7 +150,7 @@ def _call_groq(prompt: str, api_key: str) -> Dict[str, Any]:
     from groq import Groq
 
     client = Groq(api_key=api_key)
-    models = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]
+    models = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.3-70b-versatile"]
     last_err = None
     for m in models:
         try:
@@ -166,10 +180,38 @@ def _call_gemini(prompt: str, api_key: str) -> Dict[str, Any]:
     return _extract_json(response.text or "")
 
 
+def _normalize_graphic(sc: Dict[str, Any], idx: int) -> Dict[str, Any]:
+    g = sc.get("graphic") if isinstance(sc.get("graphic"), dict) else {}
+    kind = g.get("kind") or ""
+    if kind not in VALID_GRAPHIC_KINDS:
+        ov_style = sc.get("overlay_style", "")
+        if ov_style == "stat_bars":
+            kind = "stat_chart"
+        else:
+            kind = ["title_card", "stat_chart", "timeline", "map_marker"][idx % 4]
+
+    heading = str(g.get("heading") or sc.get("overlay_headline") or f"অধ্যায় {idx + 1}").strip()[:48]
+    subheading = str(g.get("subheading") or sc.get("overlay_subtext") or "").strip()[:72]
+
+    items_raw = g.get("items") or sc.get("stat_items") or []
+    items: List[str] = []
+    for it in items_raw[:4]:
+        if isinstance(it, (list, tuple)) and len(it) >= 2:
+            items.append(f"{it[0]}: {it[1]}")
+        elif str(it).strip():
+            items.append(str(it).strip()[:42])
+
+    return {
+        "kind": kind,
+        "heading": heading,
+        "subheading": subheading,
+        "items": items,
+    }
+
+
 def _enforce_variety_and_pacing(raw_scenes: List[Dict[str, Any]], total_duration: float) -> List[Dict[str, Any]]:
-    total_duration = max(total_duration, 8.0)
-    motions = ["slow_zoom_in", "pan_left", "slow_zoom_out", "pan_right", "ken_burns_up"]
-    overlay_styles = ["headline", "callout_card", "stat_bars"]
+    total_duration = max(float(total_duration or 0.0), 8.0)
+    motions = ["slow_zoom_in", "pan_left", "slow_zoom_out", "pan_right"]
     fallback_queries = [
         "architectural blueprint engineering table",
         "aerial city skyline twilight drone",
@@ -181,24 +223,31 @@ def _enforce_variety_and_pacing(raw_scenes: List[Dict[str, Any]], total_duration
         "city traffic night timelapse",
         "bridge cables architecture perspective",
         "laboratory scientific data screen",
+        "earth from space night lights",
+        "ocean waves aerial cinematic",
+        "mountain range clouds timelapse",
+        "industrial factory robotics motion",
+        "historical architecture columns wide",
+        "solar panels energy field aerial",
     ]
 
     if not raw_scenes:
-        step = 5.0
+        step = 5.5
         count = max(1, int(total_duration // step))
         raw_scenes = [
             {
                 "scene_id": i + 1,
                 "start": round(i * step, 2),
                 "end": round(min((i + 1) * step, total_duration), 2),
-                "type": "motion_graphic" if i % 3 == 1 else "stock_footage",
-                "overlay_style": overlay_styles[i % len(overlay_styles)],
+                "visual_type": "motion_graphic" if i % 3 == 2 else "stock_footage",
+                "search_queries": [fallback_queries[i % len(fallback_queries)]],
                 "accent": "red" if i % 4 == 3 else "gold",
-                "motion_effect": motions[i % len(motions)],
-                "search_query": fallback_queries[i % len(fallback_queries)],
-                "overlay_headline": f"অধ্যায় {i + 1}",
-                "overlay_subtext": "",
-                "stat_items": [],
+                "graphic": {
+                    "kind": "title_card",
+                    "heading": f"অধ্যায় {i + 1}",
+                    "subheading": "",
+                    "items": [],
+                },
             }
             for i in range(count)
         ]
@@ -211,71 +260,120 @@ def _enforce_variety_and_pacing(raw_scenes: List[Dict[str, Any]], total_duration
     for idx, sc in enumerate(raw_scenes):
         if cursor >= total_duration - 0.25:
             break
+
         orig_start = float(sc.get("start", cursor))
-        orig_end = float(sc.get("end", orig_start + 5.0))
-        dur = max(3.5, min(7.5, orig_end - orig_start if orig_end > orig_start else 5.0))
+        orig_end = float(sc.get("end", orig_start + 5.5))
+        orig_dur = float(sc.get("duration") or (orig_end - orig_start if orig_end > orig_start else 5.5))
+        dur = max(3.5, min(8.0, orig_dur))
+
         start = round(cursor, 2)
         end = round(min(total_duration, start + dur), 2)
-        if end <= start:
+        if total_duration - end < 2.0:
             end = round(total_duration, 2)
+        actual_dur = round(max(1.5, end - start), 2)
 
-        stype = sc.get("type", "stock_footage")
-        if stype not in ("stock_footage", "motion_graphic"):
-            stype = "motion_graphic" if idx % 3 == 0 else "stock_footage"
+        vtype = sc.get("visual_type") or sc.get("type") or "stock_footage"
+        if vtype not in ("stock_footage", "motion_graphic"):
+            vtype = "motion_graphic" if idx % 3 == 2 else "stock_footage"
 
-        if stype == "stock_footage":
+        if vtype == "stock_footage":
             if consecutive_stock >= 2:
-                stype = "motion_graphic"
+                vtype = "motion_graphic"
                 consecutive_stock = 0
             else:
                 consecutive_stock += 1
         else:
             consecutive_stock = 0
 
-        query = (sc.get("search_query") or "").strip()
-        if stype == "stock_footage":
-            norm_q = query.lower()
-            if not query or norm_q in seen_queries:
+        raw_qs = sc.get("search_queries")
+        if isinstance(raw_qs, str):
+            raw_qs = [raw_qs]
+        elif not isinstance(raw_qs, list):
+            single_q = sc.get("search_query")
+            raw_qs = [single_q] if single_q else []
+
+        queries: List[str] = []
+        if vtype == "stock_footage":
+            for q in raw_qs:
+                q_str = str(q or "").strip()
+                if q_str and q_str.lower() not in seen_queries:
+                    queries.append(q_str)
+                    seen_queries.add(q_str.lower())
+                if len(queries) >= 2:
+                    break
+
+            if not queries:
                 for fq in fallback_queries:
                     if fq.lower() not in seen_queries:
-                        query = fq
+                        queries.append(fq)
+                        seen_queries.add(fq.lower())
                         break
-                else:
-                    query = f"{fallback_queries[idx % len(fallback_queries)]} cinematic view {idx + 1}"
-            seen_queries.add(query.lower())
-        else:
-            query = ""
+                if not queries:
+                    fq = f"{fallback_queries[idx % len(fallback_queries)]} wide shot"
+                    queries.append(fq)
 
-        ov_style = sc.get("overlay_style") or overlay_styles[idx % len(overlay_styles)]
-        if ov_style not in ("headline", "callout_card", "stat_bars"):
-            ov_style = "callout_card" if stype == "motion_graphic" else "headline"
-
-        stat_items = sc.get("stat_items") or []
-        if ov_style == "stat_bars" and not stat_items:
-            ov_style = "callout_card"
+        graphic = _normalize_graphic(sc, len(cleaned))
+        accent = "red" if sc.get("accent") == "red" else "gold"
 
         cleaned.append({
             "scene_id": len(cleaned) + 1,
             "start": start,
             "end": end,
-            "type": stype,
-            "overlay_style": ov_style,
-            "accent": "red" if sc.get("accent") == "red" else "gold",
+            "duration": actual_dur,
+            "visual_type": vtype,
+            "type": vtype,
+            "search_queries": queries,
+            "search_query": queries[0] if queries else "",
+            "accent": accent,
             "motion_effect": sc.get("motion_effect") or motions[idx % len(motions)],
-            "search_query": query,
-            "overlay_headline": (sc.get("overlay_headline") or "").strip()[:48],
-            "overlay_subtext": (sc.get("overlay_subtext") or "").strip()[:64],
-            "stat_items": stat_items,
+            "graphic": graphic,
+            "overlay_headline": graphic["heading"],
+            "overlay_subtext": graphic["subheading"],
         })
         cursor = end
 
     if cleaned and cleaned[-1]["end"] < total_duration:
-        cleaned[-1]["end"] = round(total_duration, 2)
+        gap = round(total_duration - cleaned[-1]["end"], 2)
+        if gap <= 4.0:
+            cleaned[-1]["end"] = round(total_duration, 2)
+            cleaned[-1]["duration"] = round(cleaned[-1]["end"] - cleaned[-1]["start"], 2)
+        else:
+            while cursor < total_duration - 0.25:
+                s_idx = len(cleaned)
+                start = round(cursor, 2)
+                end = round(min(total_duration, start + 6.0), 2)
+                if total_duration - end < 2.0:
+                    end = round(total_duration, 2)
+                dur = round(max(1.5, end - start), 2)
+                vtype = "motion_graphic" if s_idx % 3 == 2 else "stock_footage"
+                fq = fallback_queries[s_idx % len(fallback_queries)]
+                cleaned.append({
+                    "scene_id": s_idx + 1,
+                    "start": start,
+                    "end": end,
+                    "duration": dur,
+                    "visual_type": vtype,
+                    "type": vtype,
+                    "search_queries": [fq] if vtype == "stock_footage" else [],
+                    "search_query": fq if vtype == "stock_footage" else "",
+                    "accent": "gold",
+                    "motion_effect": motions[s_idx % len(motions)],
+                    "graphic": {
+                        "kind": "title_card",
+                        "heading": f"অধ্যায় {s_idx + 1}",
+                        "subheading": "",
+                        "items": [],
+                    },
+                    "overlay_headline": f"অধ্যায় {s_idx + 1}",
+                    "overlay_subtext": "",
+                })
+                cursor = end
 
     return cleaned
 
 
 def plan_scenes(transcript_text: str, total_duration: float, title: str = "") -> Dict[str, Any]:
+    update_status("creating_scene_plan", "AI ডিরেক্টর দৃশ্য পরিকল্পনা ও গ্রাফিক্স ডিজাইন তৈরি করছে...", percent=42)
     prompt = _build_prompt(transcript_text, total_duration, title=title)
     plan: Dict[str, Any] = {}
 
@@ -289,18 +387,32 @@ def plan_scenes(transcript_text: str, total_duration: float, title: str = "") ->
         if not api_key:
             continue
         try:
-            print(f"[Director] Trying provider: {name}")
+            print(f"[Director] Trying provider: {name}", flush=True)
             plan = fn(prompt, api_key)
             if isinstance(plan, dict) and isinstance(plan.get("scenes"), list) and plan["scenes"]:
-                print(f"[Director] Scene plan generated via {name} ({len(plan['scenes'])} scenes)")
+                print(f"[Director] Scene plan generated via {name} ({len(plan['scenes'])} scenes)", flush=True)
                 break
         except Exception as e:
-            print(f"[Director] {name} failed: {e}")
+            print(f"[Director] {name} failed: {e}", flush=True)
             continue
 
     raw_scenes = plan.get("scenes") if isinstance(plan, dict) else []
+    color_grade = plan.get("color_grade") if isinstance(plan, dict) else "cinematic_teal"
+    if color_grade not in VALID_GRADES:
+        color_grade = "cinematic_teal"
+    mood = (plan.get("mood") if isinstance(plan, dict) else None) or "documentary_ambient"
+
     scenes = _enforce_variety_and_pacing(raw_scenes or [], total_duration)
-    return {"scenes": scenes}
+    update_status("creating_scene_plan", f"{len(scenes)}টি ডাইনামিক দৃশ্য পরিকল্পনা প্রস্তুত হয়েছে।", percent=50)
+
+    return {
+        "title": title or os.environ.get("DOC_TITLE", "").strip() or "Documentary",
+        "color_grade": color_grade,
+        "mood": mood,
+        "scene_count": len(scenes),
+        "total_duration": round(float(total_duration), 2),
+        "scenes": scenes,
+    }
 
 
 def create_scene_plan(
@@ -310,12 +422,9 @@ def create_scene_plan(
     *args: Any,
     **kwargs: Any,
 ) -> Dict[str, Any]:
-    """
-    Compatibility wrapper for processor/pipeline.py.
-    Accepts transcript as str, dict (with 'segments'/'text'/'duration'), or list of segments.
-    """
+    """Entry point called by processor/pipeline.py."""
     inferred_duration = duration or kwargs.get("total_duration") or kwargs.get("audio_duration")
-    doc_title = title or kwargs.get("doc_title") or ""
+    doc_title = title or kwargs.get("doc_title") or os.environ.get("DOC_TITLE", "").strip()
 
     if isinstance(transcript, dict):
         segments = transcript.get("segments") or []

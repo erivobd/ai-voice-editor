@@ -7,10 +7,10 @@ from audio_music import prepare_background_music
 WORK = Path(os.environ.get("WORK_DIR", "/tmp/doc_job"))
 
 GRADE_FILTERS = {
-    "cinematic_teal": "eq=contrast=1.06:saturation=1.08:brightness=-0.02,colorbalance=bs=0.05:rs=-0.03",
-    "warm_history": "eq=contrast=1.05:saturation=0.92:brightness=-0.01,colorbalance=rs=0.06:gs=0.02:bs=-0.05",
-    "cool_science": "eq=contrast=1.07:saturation=1.05,colorbalance=bs=0.07:gs=0.02:rs=-0.04",
-    "neutral_doc": "eq=contrast=1.04:saturation=1.03"
+    "cinematic_teal": "eq=contrast=1.06:saturation=0.88:brightness=-0.02,colorbalance=bs=0.05:rs=-0.03",
+    "warm_history": "eq=contrast=1.05:saturation=0.86:brightness=-0.01,colorbalance=rs=0.06:gs=0.02:bs=-0.05",
+    "cool_science": "eq=contrast=1.07:saturation=0.90,colorbalance=bs=0.07:gs=0.02:rs=-0.04",
+    "neutral_doc": "eq=contrast=1.04:saturation=0.92"
 }
 
 
@@ -42,31 +42,58 @@ def build_subtitles_srt(transcript_data):
 
 
 def _render_scene_clip(scene, out_clip, grade_filter):
-    dur = max(1.0, float(scene["duration"]))
+    dur = max(1.0, float(scene.get("duration") or (float(scene.get("end", 5.0)) - float(scene.get("start", 0.0)))))
     fade_d = min(0.35, dur / 5.0)
     fade_out_st = max(0.0, dur - fade_d)
 
     footage_path = scene.get("footage_path")
     graphic_path = scene.get("graphic_path")
+    overlay_path = scene.get("overlay_path")
 
     if footage_path and Path(footage_path).exists():
-        vf = (
-            f"scale=1920:1080:force_original_aspect_ratio=increase,"
-            f"crop=1920:1080,fps=30,format=yuv420p,"
-            f"{grade_filter},"
-            f"fade=t=in:st=0:d={fade_d:.3f},fade=t=out:st={fade_out_st:.3f}:d={fade_d:.3f}"
-        )
-        run_ffmpeg([
-            "ffmpeg", "-y",
-            "-stream_loop", "-1",
-            "-i", str(footage_path),
-            "-t", f"{dur:.3f}",
-            "-an",
-            "-vf", vf,
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
-            "-pix_fmt", "yuv420p",
-            str(out_clip)
-        ])
+        if overlay_path and Path(overlay_path).exists():
+            ov_in = 0.25
+            ov_out = max(ov_in + 0.4, dur - 0.55)
+            fc = (
+                f"[0:v]scale=1920:1080:force_original_aspect_ratio=increase,"
+                f"crop=1920:1080,fps=30,format=yuv420p,{grade_filter}[base];"
+                f"[1:v]format=rgba,fade=t=in:st={ov_in:.2f}:d=0.35:alpha=1,"
+                f"fade=t=out:st={ov_out:.2f}:d=0.35:alpha=1[ov];"
+                f"[base][ov]overlay=0:0:shortest=1,"
+                f"fade=t=in:st=0:d={fade_d:.3f},fade=t=out:st={fade_out_st:.3f}:d={fade_d:.3f},format=yuv420p[vout]"
+            )
+            run_ffmpeg([
+                "ffmpeg", "-y",
+                "-stream_loop", "-1",
+                "-i", str(footage_path),
+                "-loop", "1", "-t", f"{dur:.3f}",
+                "-i", str(overlay_path),
+                "-t", f"{dur:.3f}",
+                "-an",
+                "-filter_complex", fc,
+                "-map", "[vout]",
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+                "-pix_fmt", "yuv420p",
+                str(out_clip)
+            ])
+        else:
+            vf = (
+                f"scale=1920:1080:force_original_aspect_ratio=increase,"
+                f"crop=1920:1080,fps=30,format=yuv420p,"
+                f"{grade_filter},"
+                f"fade=t=in:st=0:d={fade_d:.3f},fade=t=out:st={fade_out_st:.3f}:d={fade_d:.3f}"
+            )
+            run_ffmpeg([
+                "ffmpeg", "-y",
+                "-stream_loop", "-1",
+                "-i", str(footage_path),
+                "-t", f"{dur:.3f}",
+                "-an",
+                "-vf", vf,
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+                "-pix_fmt", "yuv420p",
+                str(out_clip)
+            ])
         try:
             Path(footage_path).unlink()
         except OSError:
@@ -149,7 +176,7 @@ def render_documentary(scene_plan, transcript_data, original_audio_path):
     cmd = ["ffmpeg", "-y"] + inputs
     if burn_subs and srt_path.exists() and srt_path.stat().st_size > 0:
         escaped_srt = str(srt_path).replace("\\", "/").replace(":", "\\:")
-        sub_style = "FontName=Noto Sans Bengali,FontSize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H64000000,BorderStyle=3,Outline=1,Shadow=0,MarginV=36"
+        sub_style = "FontName=Hind Siliguri,FontSize=21,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BackColour=&H64000000,BorderStyle=3,Outline=1,Shadow=0,MarginV=36"
         vf = f"subtitles='{escaped_srt}':force_style='{sub_style}'"
         if audio_filter:
             cmd.extend(["-filter_complex", f"[0:v]{vf}[vout];{audio_filter}", "-map", "[vout]"] + audio_map)
