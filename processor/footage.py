@@ -211,7 +211,7 @@ def _stream_trim_video(url, dest_mp4, needed_duration):
         "-i", url,
         "-t", f"{clip_len:.2f}",
         "-an",
-        "-vf", "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,fps=30",
+        "-vf", "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1,fps=30",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
         "-pix_fmt", "yuv420p",
         str(dest_mp4),
@@ -245,7 +245,7 @@ def _image_to_ken_burns_mp4(img_path, out_mp4, duration, scene_id):
         "-i", str(prepared_jpg),
         "-t", f"{dur:.3f}",
         "-an",
-        "-vf", f"{zp},format=yuv420p",
+        "-vf", f"{zp},setsar=1,format=yuv420p",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
         "-pix_fmt", "yuv420p",
         str(out_mp4)

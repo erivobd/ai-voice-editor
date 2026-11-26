@@ -364,7 +364,7 @@ def _render_animated_infographic_mp4(png_path: Path, out_mp4: Path, duration: fl
         "-i", str(png_path),
         "-t", f"{dur:.3f}",
         "-an",
-        "-vf", f"{zp},format=yuv420p",
+        "-vf", f"{zp},setsar=1,format=yuv420p",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
         "-pix_fmt", "yuv420p",
         str(out_mp4)

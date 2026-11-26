@@ -109,6 +109,51 @@ def parse_srt_or_script(raw_text: str, total_duration: float):
     return segments
 
 
+def _collect_whisper_segments(model, audio_path, use_vad: bool):
+    kwargs = {
+        "language": AUDIO_LANGUAGE,
+        "beam_size": 5,
+        "word_timestamps": True,
+        "condition_on_previous_text": False,
+    }
+    if use_vad:
+        kwargs["vad_filter"] = True
+        kwargs["vad_parameters"] = {
+            "threshold": 0.32,
+            "min_speech_duration_ms": 150,
+            "min_silence_duration_ms": 750,
+            "speech_pad_ms": 300,
+        }
+    else:
+        kwargs["vad_filter"] = False
+
+    segments_iter, info = model.transcribe(str(audio_path), **kwargs)
+    segments = []
+    full_parts = []
+    for seg in segments_iter:
+        text = sanitize_bengali_text(seg.text or "")
+        if not text:
+            continue
+        words = []
+        for w in (seg.words or []):
+            wt = sanitize_bengali_text(w.word or "")
+            if wt:
+                words.append({
+                    "start": round(float(w.start), 3),
+                    "end": round(float(w.end), 3),
+                    "word": wt
+                })
+        segments.append({
+            "id": len(segments),
+            "start": round(float(seg.start), 3),
+            "end": round(float(seg.end), 3),
+            "text": text,
+            "words": words
+        })
+        full_parts.append(text)
+    return segments, full_parts, info
+
+
 def run_transcription():
     update_status("analyzing_voice", "আপনার রেডি ভয়েসওভার পরীক্ষা ও বিশ্লেষণ করা হচ্ছে...", percent=14)
     audio_path = download_original_audio()
@@ -142,7 +187,7 @@ def run_transcription():
             out_path.write_text(json.dumps(transcript_data, ensure_ascii=False, indent=2), encoding="utf-8")
             update_status(
                 "generating_transcript",
-                f"কাস্টম SRT থেকে {len(segments)}টি অংশ লোড সম্পন্ন হয়েছে।",
+                f"কাস্টম SRT থেকে {len(segments)}টি অংশ লোড সম্পন্ন হয়েছে (মোট {round(duration, 1)} সেকেন্ড)।",
                 percent=34
             )
             return transcript_data, audio_path
@@ -156,38 +201,18 @@ def run_transcription():
     )
 
     model = WhisperModel(MODEL_NAME, device="cpu", compute_type="int8")
-    segments_iter, info = model.transcribe(
-        str(audio_path),
-        language=AUDIO_LANGUAGE,
-        beam_size=5,
-        word_timestamps=True,
-        vad_filter=True,
-        vad_parameters={"min_silence_duration_ms": 450}
-    )
+    segments, full_parts, info = _collect_whisper_segments(model, audio_path, use_vad=True)
 
-    segments = []
-    full_parts = []
-    for seg in segments_iter:
-        text = sanitize_bengali_text(seg.text or "")
-        if not text:
-            continue
-        words = []
-        for w in (seg.words or []):
-            wt = sanitize_bengali_text(w.word or "")
-            if wt:
-                words.append({
-                    "start": round(float(w.start), 3),
-                    "end": round(float(w.end), 3),
-                    "word": wt
-                })
-        segments.append({
-            "id": len(segments),
-            "start": round(float(seg.start), 3),
-            "end": round(float(seg.end), 3),
-            "text": text,
-            "words": words
-        })
-        full_parts.append(text)
+    # Safety fallback: if VAD truncated a softer voiceover early, re-run without VAD across the full audio
+    last_seg_end = max((s["end"] for s in segments), default=0.0)
+    if duration > 10.0 and last_seg_end < duration * 0.45:
+        print(
+            f"[Transcribe] VAD covered only {last_seg_end:.1f}s of {duration:.1f}s audio; retrying full-audio transcription...",
+            flush=True,
+        )
+        segments_novad, full_parts_novad, info_novad = _collect_whisper_segments(model, audio_path, use_vad=False)
+        if segments_novad:
+            segments, full_parts, info = segments_novad, full_parts_novad, info_novad
 
     if not segments:
         raise RuntimeError("অডিওতে কোনো স্পষ্ট বাংলা কথা শনাক্ত করা যায়নি।")
@@ -211,7 +236,7 @@ def run_transcription():
 
     update_status(
         "generating_transcript",
-        f"ট্রান্সক্রিপ্ট সম্পন্ন ({len(segments)}টি অংশ, ভাষা: {AUDIO_LANGUAGE})।",
+        f"ট্রান্সক্রিপ্ট সম্পন্ন ({len(segments)}টি অংশ, মোট {round(duration, 1)} সেকেন্ড)।",
         percent=34
     )
     return transcript_data, audio_path

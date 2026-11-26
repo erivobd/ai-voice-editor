@@ -66,22 +66,24 @@ def _build_prompt(transcript_text: str, total_duration: float, title: str = "") 
     title_hint = f"Documentary Title: {title}\n" if title else ""
     return f"""
 You are an elite documentary video director.
-{title_hint}Create a tightly synchronized, visually accurate scene plan for a {total_duration:.1f}s documentary from this timestamped transcript:
+{title_hint}Create a tightly synchronized, visually accurate scene plan covering the ENTIRE {total_duration:.1f}s duration of this documentary from 0.0s to {total_duration:.1f}s:
 
 TRANSCRIPT:
 {transcript_text[:12000]}
 
-STRICT VISUAL & LANGUAGE RULES:
-1. STRICT VISUAL-TRANSCRIPT LOCK (HIGHEST PRIORITY):
+STRICT VISUAL & TIMING RULES:
+1. FULL DURATION COVERAGE (CRITICAL):
+   - You MUST generate enough scenes to cover the ENTIRE timeline from 0.0s all the way to {total_duration:.1f}s with ZERO gaps and ZERO early cutoff.
+   - Do NOT stop at the last transcript line if audio continues; continue matching thematic scenes up to {total_duration:.1f}s.
+2. STRICT VISUAL-TRANSCRIPT LOCK:
    - Every single scene's "search_queries" and "graphic" MUST directly match the exact spoken subject, noun, place, or concept in the transcript at that exact timestamp.
    - Example: If the narrator says "রাতের আকাশের দিকে তাকালে আমরা অসংখ্য তারা দেখতে পাই", the query MUST be "night sky full of stars milky way" — NEVER ocean, whirlpool, or unrelated nature!
    - NEVER use generic engineering blueprints, circuit boards, or unrelated stock unless the transcript explicitly discusses engineering or code.
-2. COHESIVE SCENE DURATION:
-   - Keep each scene at least 3.5s to 7.0s (unless total_duration is shorter than 3.5s, in which case make 1 cohesive scene covering 0.0s to {total_duration:.1f}s).
+3. COHESIVE SCENE DURATION:
+   - Keep each scene 3.5s to 7.0s (unless total_duration < 6.5s, in which case make 1 cohesive scene covering 0.0s to {total_duration:.1f}s).
    - Only split into rapid cuts (1.8s–2.8s) if the narrator explicitly enumerates 3+ separate objects in a list.
-3. NEVER repeat the exact same search query across scenes. Provide 2 specific English visual queries per stock_footage scene.
-4. Alternate with "motion_graphic" scenes (stat_chart, timeline, map_marker, title_card) on longer videos so no more than 2 stock_footage scenes appear back-to-back.
-5. Cover 0.0s to {total_duration:.1f}s continuously with zero gaps.
+4. NEVER repeat the exact same search query across scenes. Provide 2 specific English visual queries per stock_footage scene.
+5. Alternate with "motion_graphic" scenes (stat_chart, timeline, map_marker, title_card) on longer videos so no more than 2 stock_footage scenes appear back-to-back.
 6. BENGALI ONLY FOR OVERLAYS & NO CHAPTER LABELS:
    - Every scene MUST include a "graphic" object with Bengali "heading" (<= 30 chars) and 2-3 punchy Bengali "items" (<= 22 chars each) so animated badges & pills always appear on screen.
    - NEVER write the word "অধ্যায়" or chapter numbers anywhere.
@@ -96,7 +98,7 @@ Return ONLY valid JSON with this schema:
     {{
       "scene_id": 1,
       "start": 0.0,
-      "end": 5.0,
+      "end": 5.5,
       "visual_type": "stock_footage",
       "rapid_cut": false,
       "search_queries": ["night sky full of stars milky way", "starry night sky cosmos timelapse"],
@@ -455,6 +457,7 @@ def _enforce_variety_and_pacing(
         })
         cursor = end
 
+    # Extend seamlessly up to the FULL audio duration (total_duration) so video never stops at 4 seconds!
     if cleaned and cleaned[-1]["end"] < total_duration:
         gap = round(total_duration - cleaned[-1]["end"], 2)
         if gap <= 3.5:
@@ -471,7 +474,11 @@ def _enforce_variety_and_pacing(
                 vtype = "motion_graphic" if s_idx % 3 == 2 else "stock_footage"
                 seg_txt = _find_segment_text_for_range(segments, start, end, fallback_full)
                 derived = _derive_topic_from_transcript(seg_txt, s_idx, title=title)
-                fq = derived["query"]
+                fq = fallback_queries[s_idx % len(fallback_queries)]
+                if derived.get("matched") and derived["query"].lower() not in seen_queries:
+                    fq = derived["query"]
+                seen_queries.add(fq.lower())
+
                 cleaned.append({
                     "scene_id": s_idx + 1,
                     "start": start,
@@ -485,7 +492,7 @@ def _enforce_variety_and_pacing(
                     "accent": "red" if s_idx % 2 == 0 else "gold",
                     "motion_effect": motions[s_idx % len(motions)],
                     "graphic": {
-                        "kind": "title_card",
+                        "kind": ["title_card", "stat_chart", "timeline", "map_marker"][s_idx % 4],
                         "heading": derived["heading"],
                         "subheading": "",
                         "items": derived["items"],
@@ -504,7 +511,7 @@ def plan_scenes(
     title: str = "",
     segments: Optional[List[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    update_status("creating_scene_plan", "AI ডিরেক্টর দৃশ্য পরিকল্পনা ও গ্রাফিক্স ডিজাইন তৈরি করছে...", percent=42)
+    update_status("creating_scene_plan", f"AI ডিরেক্টর সম্পূর্ণ {round(total_duration, 1)} সেকেন্ডের দৃশ্য পরিকল্পনা তৈরি করছে...", percent=42)
     prompt = _build_prompt(transcript_text, total_duration, title=title)
     plan: Dict[str, Any] = {}
 
@@ -540,7 +547,7 @@ def plan_scenes(
         fallback_full=transcript_text,
         title=title,
     )
-    update_status("creating_scene_plan", f"{len(scenes)}টি ডাইনামিক দৃশ্য পরিকল্পনা প্রস্তুত হয়েছে।", percent=50)
+    update_status("creating_scene_plan", f"{len(scenes)}টি ডাইনামিক দৃশ্য পরিকল্পনা প্রস্তুত হয়েছে ({round(total_duration, 1)} সেকেন্ড)।", percent=50)
 
     return {
         "title": title or os.environ.get("DOC_TITLE", "").strip() or "Documentary",
@@ -559,11 +566,16 @@ def create_scene_plan(
     *args: Any,
     **kwargs: Any,
 ) -> Dict[str, Any]:
-    inferred_duration = duration or kwargs.get("total_duration") or kwargs.get("audio_duration")
+    explicit_duration = duration or kwargs.get("total_duration") or kwargs.get("audio_duration")
     doc_title = title or kwargs.get("doc_title") or os.environ.get("DOC_TITLE", "").strip()
     segments: List[Dict[str, Any]] = []
+    audio_duration: Optional[float] = float(explicit_duration) if explicit_duration else None
+    max_seg_end = 0.0
 
     if isinstance(transcript, dict):
+        if transcript.get("duration"):
+            probe_dur = float(transcript["duration"])
+            audio_duration = max(audio_duration or 0.0, probe_dur)
         segments = transcript.get("segments") or []
         if segments:
             transcript_text = "\n".join(
@@ -571,12 +583,9 @@ def create_scene_plan(
                 for s in segments
                 if str(s.get("text", "")).strip()
             )
-            if inferred_duration is None:
-                inferred_duration = max((float(s.get("end", 0)) for s in segments), default=60.0)
+            max_seg_end = max((float(s.get("end", 0)) for s in segments), default=0.0)
         else:
             transcript_text = str(transcript.get("text") or transcript.get("full_text") or "")
-        if inferred_duration is None and transcript.get("duration"):
-            inferred_duration = float(transcript["duration"])
     elif isinstance(transcript, list):
         segments = [s for s in transcript if isinstance(s, dict)]
         transcript_text = "\n".join(
@@ -584,10 +593,10 @@ def create_scene_plan(
             for s in segments
             if str(s.get("text", "")).strip()
         )
-        if inferred_duration is None:
-            inferred_duration = max((float(s.get("end", 0)) for s in segments), default=60.0)
+        max_seg_end = max((float(s.get("end", 0)) for s in segments), default=0.0)
     else:
         transcript_text = str(transcript or "")
 
-    total_duration = float(inferred_duration) if inferred_duration else 60.0
+    # Always use the full audio duration (never truncate to the first 4-second segment!)
+    total_duration = max(audio_duration or 0.0, max_seg_end, 4.0)
     return plan_scenes(transcript_text, total_duration, title=doc_title, segments=segments)

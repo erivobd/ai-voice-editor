@@ -56,10 +56,10 @@ def _render_scene_clip(scene, out_clip, grade_filter):
             ov_p = Path(overlay_path)
             fc = (
                 f"[0:v]scale=1920:1080:force_original_aspect_ratio=increase,"
-                f"crop=1920:1080,fps=30,format=yuv420p,{grade_filter}[base];"
-                f"[1:v]fps=30,format=rgba[ov];"
+                f"crop=1920:1080,setsar=1,fps=30,format=yuv420p,{grade_filter}[base];"
+                f"[1:v]fps=30,setsar=1,format=rgba[ov];"
                 f"[base][ov]overlay=x=0:y=0:shortest=1,"
-                f"fade=t=in:st=0:d={fade_d:.3f},fade=t=out:st={fade_out_st:.3f}:d={fade_d:.3f},format=yuv420p[vout]"
+                f"fade=t=in:st=0:d={fade_d:.3f},fade=t=out:st={fade_out_st:.3f}:d={fade_d:.3f},setsar=1,format=yuv420p[vout]"
             )
             ov_inputs = ["-i", str(ov_p)] if ov_p.suffix.lower() in (".mov", ".webm", ".mp4") else ["-loop", "1", "-t", f"{dur:.3f}", "-i", str(ov_p)]
             run_ffmpeg([
@@ -72,15 +72,16 @@ def _render_scene_clip(scene, out_clip, grade_filter):
                 "-filter_complex", fc,
                 "-map", "[vout]",
                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+                "-video_track_timescale", "15360",
                 "-pix_fmt", "yuv420p",
                 str(out_clip)
             ])
         else:
             vf = (
                 f"scale=1920:1080:force_original_aspect_ratio=increase,"
-                f"crop=1920:1080,fps=30,format=yuv420p,"
+                f"crop=1920:1080,setsar=1,fps=30,format=yuv420p,"
                 f"{grade_filter},"
-                f"fade=t=in:st=0:d={fade_d:.3f},fade=t=out:st={fade_out_st:.3f}:d={fade_d:.3f}"
+                f"fade=t=in:st=0:d={fade_d:.3f},fade=t=out:st={fade_out_st:.3f}:d={fade_d:.3f},setsar=1"
             )
             run_ffmpeg([
                 "ffmpeg", "-y",
@@ -90,6 +91,7 @@ def _render_scene_clip(scene, out_clip, grade_filter):
                 "-an",
                 "-vf", vf,
                 "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
+                "-video_track_timescale", "15360",
                 "-pix_fmt", "yuv420p",
                 str(out_clip)
             ])
@@ -100,8 +102,8 @@ def _render_scene_clip(scene, out_clip, grade_filter):
 
     elif graphic_video_path and Path(graphic_video_path).exists():
         vf = (
-            f"scale=1920:1080,fps=30,format=yuv420p,"
-            f"fade=t=in:st=0:d={fade_d:.3f},fade=t=out:st={fade_out_st:.3f}:d={fade_d:.3f}"
+            f"scale=1920:1080,setsar=1,fps=30,format=yuv420p,"
+            f"fade=t=in:st=0:d={fade_d:.3f},fade=t=out:st={fade_out_st:.3f}:d={fade_d:.3f},setsar=1"
         )
         run_ffmpeg([
             "ffmpeg", "-y",
@@ -110,6 +112,7 @@ def _render_scene_clip(scene, out_clip, grade_filter):
             "-an",
             "-vf", vf,
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+            "-video_track_timescale", "15360",
             "-pix_fmt", "yuv420p",
             str(out_clip)
         ])
@@ -123,8 +126,8 @@ def _render_scene_clip(scene, out_clip, grade_filter):
         vf = (
             f"scale=2040:1148,"
             f"zoompan=z='min(zoom+0.0005,1.08)':d={frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1920x1080:fps=30,"
-            f"format=yuv420p,"
-            f"fade=t=in:st=0:d={fade_d:.3f},fade=t=out:st={fade_out_st:.3f}:d={fade_d:.3f}"
+            f"setsar=1,format=yuv420p,"
+            f"fade=t=in:st=0:d={fade_d:.3f},fade=t=out:st={fade_out_st:.3f}:d={fade_d:.3f},setsar=1"
         )
         run_ffmpeg([
             "ffmpeg", "-y",
@@ -134,6 +137,7 @@ def _render_scene_clip(scene, out_clip, grade_filter):
             "-an",
             "-vf", vf,
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+            "-video_track_timescale", "15360",
             "-pix_fmt", "yuv420p",
             str(out_clip)
         ])
@@ -178,7 +182,7 @@ def render_documentary(scene_plan, transcript_data, original_audio_path):
     enable_music = os.environ.get("ENABLE_BG_MUSIC", "true").lower() == "true"
     duration = float(transcript_data["duration"])
 
-    update_status("rendering_final_video", "আপনার মূল ভয়েসের সাথে চূড়ান্ত 1080p MP4 রেন্ডার হচ্ছে...", percent=92)
+    update_status("rendering_final_video", f"আপনার মূল ভয়েসের সাথে চূড়ান্ত 1080p MP4 রেন্ডার হচ্ছে ({round(duration, 1)} সেকেন্ড)...", percent=92)
 
     final_mp4 = WORK / "final_documentary.mp4"
 
@@ -212,7 +216,7 @@ def render_documentary(scene_plan, transcript_data, original_audio_path):
 
     cmd.extend([
         "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
-        "-shortest",
+        "-t", f"{duration:.3f}",
         "-movflags", "+faststart",
         str(final_mp4)
     ])
