@@ -1,4 +1,4 @@
-# AI Documentary Video Maker (FFmpeg + Pillow v4)
+# AI Documentary Production Studio (FFmpeg + Pillow v5.0)
 
 ## v4 আপডেটসমূহ (৪ সেকেন্ডে ভিডিও থেমে যাওয়ার সমাধান)
 - **সম্পূর্ণ অডিও দৈর্ঘ্য লক (`director.py`):** Whisper সেগমেন্ট ছোট হলেও অডিও ফাইলের আসল সম্পূর্ণ দৈর্ঘ্য (`duration`) অনুযায়ী শেষ পর্যন্ত দৃশ্য ও গ্রাফিক্স তৈরি হয়।
@@ -26,3 +26,41 @@
 
 ### Validation notes
 The source-level tests and syntax checks can run locally. A complete live render still depends on the user's GitHub repository secrets, API quotas, remote stock availability and a successful GitHub Actions run; those external services cannot be certified from this package alone.
+
+
+## v4.3 Modern YouTube Documentary Direction
+- **Footage-first pacing:** the director no longer forces a full-screen infographic after every two stock shots. It prefers relevant Pexels/Pixabay footage and uses a full-screen explainer only when the AI scene plan explicitly calls for one.
+- **Purposeful overlays:** editorial Bengali lower-third/label overlays are now enabled selectively (about one in four scenes by default), rather than repeating badges and pills on every shot.
+- **More natural grades:** reduced excessive teal/warm tint and vignette so stock footage retains more natural color while keeping a restrained documentary finish.
+- **Prompt direction:** asks the existing Gemini/Groq/OpenRouter director for modern YouTube documentary pacing, varied shot types, concise factual graphics, and no invented statistics.
+- **Preserved workflow:** custom SRT/transcript still bypasses Whisper; Whisper is used only when no transcript input is supplied. Existing Pexels/Pixabay sources, provider integrations, and GitHub Actions workflow remain in place.
+
+### v4.3 validation
+Run `python -m py_compile processor/*.py` and `python -m unittest discover -s tests -v`. A complete render still requires the user's configured GitHub Secrets, API quotas, and a successful GitHub Actions execution.
+
+
+## v4.4 Narration / Visual Synchronization Fix
+- **Absolute scene timestamps preserved:** scene durations are no longer forcibly clamped and appended into a new timeline; the director's absolute scene end times are retained so footage changes stay aligned with timestamped narration.
+- **Chronological scene ordering:** provider scene plans are sorted by start timestamp before rendering.
+- **CFR concat render:** scene clips are concatenated and re-encoded at 30 FPS instead of stream-copying per-clip timestamps, reducing cumulative cut-boundary timing drift.
+- **Timestamp normalization:** final video and narration audio timestamps are reset to zero before muxing; background music is aligned to the same timeline.
+- **Regression test:** verifies scene boundaries such as 2.4s and 8.1s are not shifted by duration clamping.
+
+Run `python -m py_compile processor/*.py` and `python -m unittest discover -s tests -v`. A complete live GitHub Actions render is still required to validate the configured API/media providers and the final generated video.
+
+
+## v5.0 Full Automatic Quality Upgrade
+- **Automatic-only workflow:** no manual review/approval stage is included. The worker creates the documentary from upload through final export.
+- **10–20 minute target:** this is the recommended documentary length, not a forced trim. The uploaded narration remains the authoritative duration. Longer narrations are planned in timestamped 120-second AI chunks to reduce oversized prompts and partial scene plans.
+- **Free-tier AI model routing:** Gemini uses free-tier Flash models, Groq uses Free-plan GPT-OSS/Qwen models, and OpenRouter uses the dynamic `openrouter/free` router. Keep provider accounts on their Free plans; upgrading an account to a paid tier can change its billing behavior.
+- **No paid image generation:** graphics remain programmatic through Pillow/FFmpeg. Whisper runs locally on the GitHub Actions worker when no custom SRT/transcript is provided.
+- **Quality-first encoding:** medium x264 preset with CRF 19 for scene clips and CRF 18 for final export, at 1920x1080 / 30 FPS.
+- **Automated final QC:** verifies audio/video streams, duration tolerance, resolution and frame rate; scans for possible long black/frozen intervals and records warnings in `quality_report.json`.
+- **Safer Wikimedia fallback:** only explicitly identified CC0/Public Domain items are accepted; unknown/ambiguous license labels are rejected.
+- **Timeline correction:** absolute scene starts and ends are respected; timestamp gaps no longer pull later visuals earlier. A short-audio fallback bug is also fixed.
+
+### Free usage and capacity notes
+Free API plans have changing model availability and rate limits. The app does not intentionally call paid model IDs, but API keys must remain on their providers' Free plans. OpenRouter's free router and all providers may temporarily refuse requests when their free quotas are exhausted. GitHub Actions minutes and repository storage also have plan limits. A 10–20 minute 1080p render can take substantial worker time; no free-tier service can guarantee unlimited daily renders.
+
+### v5.0 validation
+Run `python -m py_compile processor/*.py`, `python -m unittest discover -s tests -v`, and `node --check server.js && node --check public/app.js`. A complete live render still requires the user's own free-tier API keys, stock-provider keys, GitHub configuration and remaining GitHub Actions allowance.

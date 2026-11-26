@@ -335,6 +335,7 @@ app.get("/api/jobs", requirePin, async (_req, res) => {
           name: r.name,
           created_at: r.created_at,
           has_video: assetNames.includes("final_documentary.mp4"),
+          has_quality_report: assetNames.includes("quality_report.json"),
           assets: assetNames
         };
       });
@@ -404,6 +405,7 @@ app.get("/api/jobs/:jobId/asset/:assetName", requirePin, async (req, res) => {
       "scene_plan.json",
       "transcript.json",
       "subtitles.srt",
+      "quality_report.json",
       "status.json"
     ]);
     if (!allowed.has(assetName)) {
