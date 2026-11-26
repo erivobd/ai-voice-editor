@@ -20,7 +20,6 @@ async function main() {
     return;
   }
 
-  // Support both remotion/src/index.js and fallback remotion/index.js
   let entryPoint = path.resolve(__dirname, "src/index.js");
   if (!fs.existsSync(entryPoint)) {
     const altEntry = path.resolve(__dirname, "index.js");
@@ -35,7 +34,21 @@ async function main() {
   console.log(`[Remotion] Bundling composition from ${entryPoint} for ${jobs.length} animated scenes...`);
   const serveUrl = await bundle({
     entryPoint,
-    webpackOverride: (config) => config,
+    webpackOverride: (config) => ({
+      ...config,
+      module: {
+        ...config.module,
+        rules: [
+          ...(config.module?.rules || []),
+          {
+            test: /\.m?jsx?$/,
+            resolve: {
+              fullySpecified: false,
+            },
+          },
+        ],
+      },
+    }),
   });
 
   const browser = await openBrowser("chrome");
