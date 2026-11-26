@@ -8,6 +8,7 @@
     "creating_graphics",
     "editing_video",
     "rendering_final_video",
+    "quality_control",
     "completed"
   ];
 
@@ -296,6 +297,8 @@
     if (data.duration_sec) stats.push(`দৈর্ঘ্য: ${Math.round(data.duration_sec)} সেকেন্ড`);
     if (data.scene_count) stats.push(`দৃশ্য: ${data.scene_count}টি`);
     if (data.video_size_mb) stats.push(`সাইজ: ${data.video_size_mb} MB`);
+    if (data.ai_provider) stats.push(`AI: ${data.ai_provider}`);
+    if (data.quality_check_passed === true) stats.push("Quality Check: Passed");
     $("result-stats").textContent = stats.join(" • ") || "1080p MP4 প্রস্তুত";
 
     const videoEl = $("final-video-player");
@@ -310,6 +313,7 @@
     await bindProtectedDownload($("dl-plan"), currentJobId, "scene_plan.json", `${currentJobId}_scene_plan.json`);
     await bindProtectedDownload($("dl-transcript"), currentJobId, "transcript.json", `${currentJobId}_transcript.json`);
     await bindProtectedDownload($("dl-srt"), currentJobId, "subtitles.srt", `${currentJobId}_subtitles.srt`);
+    await bindProtectedDownload($("dl-qc"), currentJobId, "quality_report.json", `${currentJobId}_quality_report.json`);
 
     showOnly("result-card");
   }

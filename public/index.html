@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#070205">
-  <title>AI Documentary Video Maker</title>
+  <title>AI Documentary Studio v5.0</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
@@ -19,8 +19,9 @@
 
 <header class="top">
   <div>
-    <h1><span class="brand-dot"></span>AI Documentary Maker</h1>
-    <p>আপনার রেডি ভয়েসওভার থেকে স্বয়ংক্রিয় 1080p সিনেমাটিক ডকুমেন্টারি</p>
+    <h1><span class="brand-dot"></span>AI Documentary Studio</h1>
+    <p>আপনার ভয়েসওভার থেকে সম্পূর্ণ স্বয়ংক্রিয় 1080p সিনেমাটিক ডকুমেন্টারি</p>
+    <div class="hero-chips"><span>✦ Fully Automatic</span><span>1080p · 30 FPS</span><span>Free API Stack</span></div>
   </div>
   <button id="btn-lock-pin" class="ghost hidden">লক</button>
 </header>
@@ -36,7 +37,8 @@
 
   <section id="upload-card" class="panel hidden">
     <h2>নতুন ডকুমেন্টারি তৈরি করুন</h2>
-    <p class="muted">আপনার এডিট করা রেডি ভয়েসওভার আপলোড করুন। আপনার আসল কণ্ঠ অপরিবর্তিত রেখে AI পুরো ভিডিও তৈরি করবে।</p>
+    <p class="muted">আপনার রেডি ভয়েসওভার আপলোড করুন। AI নিজে ট্রান্সক্রিপ্ট, দৃশ্য, ফুটেজ, গ্রাফিক্স, সাউন্ড, এডিটিং ও ফাইনাল কোয়ালিটি চেক সম্পন্ন করবে। কোনো Manual Review প্রয়োজন নেই।</p>
+    <div class="auto-specs"><div><strong>10–20 মিনিট</strong><small>প্রস্তাবিত Documentary দৈর্ঘ্য</small></div><div><strong>Maximum Quality</strong><small>1080p · 30 FPS · H.264</small></div><div><strong>Free Services</strong><small>Free-tier API ও Open-source tools</small></div></div>
 
     <form id="upload-form">
       <label>ডকুমেন্টারির শিরোনাম (ঐচ্ছিক)
@@ -50,7 +52,7 @@
 
       <div class="srt-box-wrap">
         <span class="field-label">কাস্টম SRT ফাইল বা SRT/স্ক্রিপ্ট টেক্সট (ঐচ্ছিক)</span>
-        <small class="muted">SRT ফাইল দিলে বা নিচে টেক্সট পেস্ট করলে Whisper স্কিপ হবে; না দিলে Whisper (বাংলা) স্বয়ংক্রিয়ভাবে চলবে।</small>
+        <small class="muted">SRT ফাইল দিলে বা নিচে টেক্সট পেস্ট করলে Whisper স্কিপ হবে; না দিলে লোকাল Whisper (বাংলা) স্বয়ংক্রিয়ভাবে চলবে।</small>
         <input id="srt-file-input" type="file" accept=".srt,.txt">
         <textarea id="srt-text-input" rows="5" maxlength="250000" placeholder="ঐচ্ছিক: এখানে SRT বা টাইমস্ট্যাম্পড বাংলা স্ক্রিপ্ট কপি করে পেস্ট করুন..."></textarea>
         <small id="srt-mode-badge" class="srt-badge">মোড: Whisper অটো-ট্রান্সক্রিপশন (বাংলা)</small>
@@ -137,7 +139,8 @@
       <li data-stage="creating_graphics">6. Creating Graphics</li>
       <li data-stage="editing_video">7. Editing Video</li>
       <li data-stage="rendering_final_video">8. Rendering Final Video</li>
-      <li data-stage="completed">9. Completed</li>
+      <li data-stage="quality_control">9. Automated Quality Check</li>
+      <li data-stage="completed">10. Completed</li>
     </ul>
 
     <div id="status-error-box" class="error-box hidden">
@@ -164,13 +167,14 @@
       <a id="dl-plan">📋 Scene Plan (JSON)</a>
       <a id="dl-transcript">📝 Transcript (JSON)</a>
       <a id="dl-srt">💬 Subtitles (SRT)</a>
+      <a id="dl-qc">🛡️ Quality Report (JSON)</a>
     </div>
 
     <button id="btn-result-new-job" class="ghost full-width">নতুন ডকুমেন্টারি তৈরি করুন</button>
   </section>
 </main>
 
-<footer>আপনার আসল কণ্ঠ ১০০% অক্ষত থাকে। FFmpeg + Pillow স্বয়ংক্রিয় ডকুমেন্টারি ইঞ্জিন।</footer>
+<footer>আপনার মূল ভয়েসওভারই narration track হিসেবে থাকে। FFmpeg + Pillow দিয়ে সম্পূর্ণ স্বয়ংক্রিয় ডকুমেন্টারি তৈরি হয়।</footer>
 <script src="/app.js" defer></script>
 </body>
 </html>
