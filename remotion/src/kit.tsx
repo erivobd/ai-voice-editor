@@ -30,8 +30,6 @@ export const Tex: React.FC<{ src: string; style?: React.CSSProperties }> = ({ sr
   <Img src={staticFile(src)} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", ...style }} />
 );
 
-// Preserves Bengali word integrity & prevents glyph clipping/overflow:
-// Never splits Bengali words into individual characters/vowel signs/conjuncts; wraps cleanly by word.
 const hasBengali = (s: string) => /[\u0980-\u09FF]/.test(s);
 
 export const BENGALI_DIGITS = ["০", "১", "২", "৩", "৪", "৫", "৬", "৭", "৮", "৯"];
@@ -64,35 +62,37 @@ export type SubtitleCue = {
   keywords?: string[];
 };
 
+const TEXT_SHADOW_CRISP = "0 3px 16px rgba(0,0,0,0.88), 0 1px 4px rgba(0,0,0,0.95)";
+
 export const getMediaEffectFilter = (effect: string | undefined, grade: string | undefined, frame: number): string => {
   const fx = (effect || "none").toLowerCase();
   if (fx === "old_footage") {
-    const flicker = 0.86 + Math.sin(frame * 1.9) * 0.03 + Math.cos(frame * 0.7) * 0.02;
-    return `sepia(.48) contrast(1.18) brightness(${flicker.toFixed(3)}) saturate(.72)`;
+    const flicker = 0.94 + Math.sin(frame * 1.9) * 0.03 + Math.cos(frame * 0.7) * 0.02;
+    return `sepia(.45) contrast(1.14) brightness(${flicker.toFixed(3)}) saturate(.75)`;
   }
   if (fx === "archival_photo") {
-    return "sepia(.32) contrast(1.10) brightness(.88) saturate(.80)";
+    return "sepia(.28) contrast(1.08) brightness(.96) saturate(.84)";
   }
   if (fx === "vhs_retro") {
-    return "contrast(1.14) saturate(1.18) brightness(.88) hue-rotate(-6deg)";
+    return "contrast(1.12) saturate(1.15) brightness(.96) hue-rotate(-5deg)";
   }
   if (fx === "noir_bw") {
-    return "grayscale(1) contrast(1.30) brightness(.86)";
+    return "grayscale(1) contrast(1.24) brightness(.95)";
   }
   if (fx === "cctv_cam") {
-    return "grayscale(.65) sepia(.25) hue-rotate(78deg) contrast(1.22) brightness(.84)";
+    return "grayscale(.60) sepia(.22) hue-rotate(78deg) contrast(1.18) brightness(.92)";
   }
   if (fx === "dream_glow") {
-    return "brightness(.96) saturate(1.12) contrast(.95)";
+    return "brightness(1.04) saturate(1.12) contrast(.97)";
   }
   if (fx === "glitch_pulse") {
-    const burst = frame < 8 ? 1.25 : 1.04;
-    return `brightness(.86) contrast(${burst}) saturate(1.12)`;
+    const burst = frame < 8 ? 1.22 : 1.03;
+    return `brightness(1.0) contrast(${burst}) saturate(1.10)`;
   }
-  if (grade === "warm_history") return "brightness(.84) sepia(.10) saturate(1.08) contrast(1.06)";
-  if (grade === "cool_science") return "brightness(.84) saturate(.92) hue-rotate(5deg) contrast(1.08)";
-  if (grade === "cinematic_teal") return "brightness(.84) saturate(1.04) contrast(1.08)";
-  return "brightness(.84) saturate(.98) contrast(1.04)";
+  if (grade === "warm_history") return "brightness(1.0) sepia(.06) saturate(1.06) contrast(1.04)";
+  if (grade === "cool_science") return "brightness(1.0) saturate(.98) hue-rotate(4deg) contrast(1.05)";
+  if (grade === "cinematic_teal") return "brightness(1.0) saturate(1.04) contrast(1.05)";
+  return "brightness(1.0) saturate(1.02) contrast(1.03)";
 };
 
 export const VisualEffectOverlay: React.FC<{ effect?: string; fps: number }> = ({ effect, fps }) => {
@@ -109,17 +109,13 @@ export const VisualEffectOverlay: React.FC<{ effect?: string; fps: number }> = (
     const dustY = 10 + Math.floor(random(`dy-${step}`) * 80);
     return (
       <AbsoluteFill style={{ pointerEvents: "none" }}>
-        {/* Aged warm film tint + heavy vintage vignette */}
-        <AbsoluteFill style={{ background: "radial-gradient(ellipse at center, rgba(255,220,160,0.06) 35%, rgba(12,8,4,0.62) 100%)" }} />
-        {/* Deterministic vertical film scratches */}
-        <div style={{ position: "absolute", left: `${scratchX1}%`, top: 0, bottom: 0, width: 1.5, background: "rgba(255,244,214,0.28)" }} />
+        <AbsoluteFill style={{ background: "radial-gradient(ellipse at center, rgba(255,220,160,0.05) 45%, rgba(18,12,6,0.36) 100%)" }} />
+        <div style={{ position: "absolute", left: `${scratchX1}%`, top: 0, bottom: 0, width: 1.5, background: "rgba(255,244,214,0.32)" }} />
         {showScratch2 && (
-          <div style={{ position: "absolute", left: `${scratchX2}%`, top: "8%", bottom: "12%", width: 1, background: "rgba(20,14,8,0.38)" }} />
+          <div style={{ position: "absolute", left: `${scratchX2}%`, top: "8%", bottom: "12%", width: 1, background: "rgba(20,14,8,0.32)" }} />
         )}
-        {/* Vintage dust speck */}
-        <div style={{ position: "absolute", left: `${dustX}%`, top: `${dustY}%`, width: 4, height: 4, borderRadius: "50%", background: "rgba(255,240,210,0.35)" }} />
-        {/* Vintage grain */}
-        <AbsoluteFill style={{ opacity: 0.09, backgroundImage: "repeating-radial-gradient(circle at 20% 30%, rgba(255,235,200,0.8) 0, rgba(0,0,0,0.8) 1px, transparent 2px)", backgroundSize: "5px 5px" }} />
+        <div style={{ position: "absolute", left: `${dustX}%`, top: `${dustY}%`, width: 4, height: 4, borderRadius: "50%", background: "rgba(255,240,210,0.38)" }} />
+        <AbsoluteFill style={{ opacity: 0.08, backgroundImage: "repeating-radial-gradient(circle at 20% 30%, rgba(255,235,200,0.8) 0, rgba(0,0,0,0.8) 1px, transparent 2px)", backgroundSize: "5px 5px" }} />
       </AbsoluteFill>
     );
   }
@@ -127,8 +123,8 @@ export const VisualEffectOverlay: React.FC<{ effect?: string; fps: number }> = (
   if (fx === "archival_photo") {
     return (
       <AbsoluteFill style={{ pointerEvents: "none" }}>
-        <AbsoluteFill style={{ border: "26px solid rgba(240,230,210,0.14)", boxShadow: "inset 0 0 90px rgba(15,10,5,0.68)" }} />
-        <AbsoluteFill style={{ opacity: 0.06, backgroundImage: "repeating-radial-gradient(circle at 30% 40%, rgba(255,245,220,0.7) 0, rgba(0,0,0,0.7) 1px, transparent 2px)", backgroundSize: "6px 6px" }} />
+        <AbsoluteFill style={{ border: "22px solid rgba(240,230,210,0.16)", boxShadow: "inset 0 0 60px rgba(15,10,5,0.40)" }} />
+        <AbsoluteFill style={{ opacity: 0.05, backgroundImage: "repeating-radial-gradient(circle at 30% 40%, rgba(255,245,220,0.7) 0, rgba(0,0,0,0.7) 1px, transparent 2px)", backgroundSize: "6px 6px" }} />
       </AbsoluteFill>
     );
   }
@@ -139,12 +135,9 @@ export const VisualEffectOverlay: React.FC<{ effect?: string; fps: number }> = (
     const tc = `00:${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}`;
     return (
       <AbsoluteFill style={{ pointerEvents: "none" }}>
-        {/* CRT scanlines */}
-        <AbsoluteFill style={{ opacity: 0.18, backgroundImage: "repeating-linear-gradient(0deg, rgba(0,0,0,0.55) 0px, rgba(0,0,0,0.55) 1px, transparent 1px, transparent 4px)" }} />
-        {/* Rolling VHS tracking bar */}
-        <div style={{ position: "absolute", left: 0, right: 0, top: scanY, height: 18, background: "linear-gradient(180deg, transparent, rgba(255,255,255,0.14), transparent)" }} />
-        {/* Safe-zone retro REC indicator */}
-        <div style={{ position: "absolute", left: 96, bottom: 58, fontFamily: "monospace", fontSize: 20, fontWeight: 700, color: "rgba(255,255,255,0.78)", textShadow: "2px 0 rgba(255,0,80,0.55), -2px 0 rgba(0,220,255,0.55)" }}>
+        <AbsoluteFill style={{ opacity: 0.16, backgroundImage: "repeating-linear-gradient(0deg, rgba(0,0,0,0.5) 0px, rgba(0,0,0,0.5) 1px, transparent 1px, transparent 4px)" }} />
+        <div style={{ position: "absolute", left: 0, right: 0, top: scanY, height: 18, background: "linear-gradient(180deg, transparent, rgba(255,255,255,0.15), transparent)" }} />
+        <div style={{ position: "absolute", left: 96, bottom: 58, fontFamily: "monospace", fontSize: 20, fontWeight: 700, color: "rgba(255,255,255,0.82)", textShadow: "2px 0 rgba(255,0,80,0.55), -2px 0 rgba(0,220,255,0.55)" }}>
           ● PLAY {tc}
         </div>
       </AbsoluteFill>
@@ -153,7 +146,7 @@ export const VisualEffectOverlay: React.FC<{ effect?: string; fps: number }> = (
 
   if (fx === "noir_bw") {
     return (
-      <AbsoluteFill style={{ pointerEvents: "none", background: "radial-gradient(ellipse at center, transparent 42%, rgba(0,0,0,0.72) 100%)" }} />
+      <AbsoluteFill style={{ pointerEvents: "none", background: "radial-gradient(ellipse at center, transparent 52%, rgba(0,0,0,0.42) 100%)" }} />
     );
   }
 
@@ -161,13 +154,12 @@ export const VisualEffectOverlay: React.FC<{ effect?: string; fps: number }> = (
     const blink = Math.floor(frame / Math.max(1, Math.round(fps / 2))) % 2 === 0;
     return (
       <AbsoluteFill style={{ pointerEvents: "none" }}>
-        <AbsoluteFill style={{ opacity: 0.16, backgroundImage: "repeating-linear-gradient(0deg, rgba(0,25,10,0.6) 0px, rgba(0,25,10,0.6) 1px, transparent 1px, transparent 3px)" }} />
-        {/* Corner surveillance brackets inside 5% safe zone */}
-        <div style={{ position: "absolute", left: 96, top: 54, width: 34, height: 34, borderLeft: "3px solid rgba(167,243,208,0.7)", borderTop: "3px solid rgba(167,243,208,0.7)" }} />
-        <div style={{ position: "absolute", right: 96, top: 54, width: 34, height: 34, borderRight: "3px solid rgba(167,243,208,0.7)", borderTop: "3px solid rgba(167,243,208,0.7)" }} />
-        <div style={{ position: "absolute", left: 96, bottom: 54, width: 34, height: 34, borderLeft: "3px solid rgba(167,243,208,0.7)", borderBottom: "3px solid rgba(167,243,208,0.7)" }} />
-        <div style={{ position: "absolute", right: 96, bottom: 54, width: 34, height: 34, borderRight: "3px solid rgba(167,243,208,0.7)", borderBottom: "3px solid rgba(167,243,208,0.7)" }} />
-        <div style={{ position: "absolute", left: 112, top: 64, fontFamily: "monospace", fontSize: 18, fontWeight: 700, color: "rgba(167,243,208,0.85)" }}>
+        <AbsoluteFill style={{ opacity: 0.15, backgroundImage: "repeating-linear-gradient(0deg, rgba(0,25,10,0.55) 0px, rgba(0,25,10,0.55) 1px, transparent 1px, transparent 3px)" }} />
+        <div style={{ position: "absolute", left: 96, top: 54, width: 34, height: 34, borderLeft: "3px solid rgba(167,243,208,0.75)", borderTop: "3px solid rgba(167,243,208,0.75)" }} />
+        <div style={{ position: "absolute", right: 96, top: 54, width: 34, height: 34, borderRight: "3px solid rgba(167,243,208,0.75)", borderTop: "3px solid rgba(167,243,208,0.75)" }} />
+        <div style={{ position: "absolute", left: 96, bottom: 54, width: 34, height: 34, borderLeft: "3px solid rgba(167,243,208,0.75)", borderBottom: "3px solid rgba(167,243,208,0.75)" }} />
+        <div style={{ position: "absolute", right: 96, bottom: 54, width: 34, height: 34, borderRight: "3px solid rgba(167,243,208,0.75)", borderBottom: "3px solid rgba(167,243,208,0.75)" }} />
+        <div style={{ position: "absolute", left: 112, top: 64, fontFamily: "monospace", fontSize: 18, fontWeight: 700, color: "rgba(167,243,208,0.88)" }}>
           {blink ? "● REC" : "  REC"} · CAM-01
         </div>
       </AbsoluteFill>
@@ -298,6 +290,316 @@ export const computeTransitionStyle = (
   return { style: {}, flashOpacity: 0 };
 };
 
+/** Clean Vox/Documentary-style sharp accent tag bar (wipes in from left, NO pink box!) */
+const EditorialTagBar: React.FC<{ text: string; theme: ThemePalette; fps: number }> = ({ text, theme, fps }) => {
+  const frame = useCurrentFrame();
+  const wipe = interpolate(frame, [0, Math.round(fps * 0.28)], [100, 0], { ...clamp, easing: Easing.out(Easing.cubic) });
+  const barBg = theme.accent === "#dc2626" ? "#facc15" : theme.accent;
+  const barText = barBg === "#facc15" || theme.isLight ? "#111827" : "#ffffff";
+  return (
+    <div style={{ display: "inline-block", clipPath: `inset(0 ${wipe.toFixed(1)}% 0 0)`, marginBottom: 18 }}>
+      <div
+        style={{
+          background: barBg,
+          color: barText,
+          padding: "6px 16px",
+          fontSize: 22,
+          fontWeight: 700,
+          letterSpacing: 0,
+          borderRadius: 2,
+          boxShadow: "0 4px 14px rgba(0,0,0,0.35)",
+        }}
+      >
+        {text}
+      </div>
+    </div>
+  );
+};
+
+/** Compact floating callout pill with glowing indicator dot (matches reference video) */
+const CalloutPill: React.FC<{ title: string; subtitle?: string; theme: ThemePalette; fps: number; delay?: number }> = ({
+  title,
+  subtitle,
+  theme,
+  fps,
+  delay = 10,
+}) => {
+  const frame = useCurrentFrame();
+  const sp = spring({ frame: Math.max(0, frame - delay), fps, config: { damping: 14, stiffness: 160 } });
+  const op = interpolate(frame, [delay, delay + 7], [0, 1], clamp);
+  const tx = interpolate(sp, [0, 1], [-22, 0]);
+  const dotColor = theme.accent === "#dc2626" ? "#facc15" : theme.accent;
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 12,
+        opacity: op,
+        transform: `translateX(${tx.toFixed(1)}px)`,
+        background: "rgba(12, 18, 28, 0.78)",
+        border: `1.5px solid ${dotColor}`,
+        borderRadius: 10,
+        padding: "10px 20px",
+        boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
+      }}
+    >
+      <span style={{ width: 10, height: 10, borderRadius: "50%", background: dotColor, boxShadow: `0 0 12px ${dotColor}`, flexShrink: 0 }} />
+      <div>
+        <div style={{ fontSize: 24, fontWeight: 700, color: "#ffffff", lineHeight: 1.25 }}>{title}</div>
+        {subtitle && <div style={{ fontSize: 17, color: "#cbd5e1", lineHeight: 1.25, marginTop: 2 }}>{subtitle}</div>}
+      </div>
+    </div>
+  );
+};
+
+/** Word-by-word kinetic Bengali headline floating cleanly over footage (NO background box!) */
+const KineticHeadline: React.FC<{
+  text: string;
+  fps: number;
+  color: string;
+  fontSize?: number;
+  align?: "left" | "center" | "right";
+}> = ({ text, fps, color, fontSize = 58, align = "left" }) => {
+  const frame = useCurrentFrame();
+  const words = text.normalize("NFC").split(/\s+/).filter(Boolean);
+  return (
+    <div
+      style={{
+        fontSize,
+        fontWeight: 700,
+        lineHeight: 1.32,
+        color,
+        textAlign: align,
+        textShadow: TEXT_SHADOW_CRISP,
+        letterSpacing: 0,
+        maxWidth: 1120,
+      }}
+    >
+      {words.map((w, i) => {
+        const st = 3 + i * Math.max(2, Math.round(fps * 0.08));
+        const op = interpolate(frame, [st, st + 6], [0, 1], clamp);
+        const ty = interpolate(frame, [st, st + 6], [18, 0], { ...clamp, easing: Easing.out(Easing.cubic) });
+        return (
+          <span key={i} style={{ display: "inline-block", marginRight: 14, opacity: op, transform: `translateY(${ty.toFixed(1)}px)` }}>
+            {w}
+          </span>
+        );
+      })}
+    </div>
+  );
+};
+
+export const CinematicIntroCard: React.FC<{
+  tag?: string;
+  headline?: string;
+  items?: string[];
+  theme: ThemePalette;
+  fps: number;
+  len: number;
+  fontFamily: string;
+}> = ({ tag, headline, items = [], theme, fps, len, fontFamily }) => {
+  const frame = useCurrentFrame();
+  const exitOp = interpolate(frame, [Math.max(15, len - 12), len], [1, 0], clamp);
+  const lineW = interpolate(frame, [4, Math.round(fps * 0.65)], [0, 440], { ...clamp, easing: Easing.out(Easing.cubic) });
+  const barColor = theme.accent === "#dc2626" ? "#facc15" : theme.accent;
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        left: 96,
+        right: 96,
+        top: 120,
+        opacity: exitOp,
+        fontFamily,
+        pointerEvents: "none",
+      }}
+    >
+      {tag && <EditorialTagBar text={tag} theme={theme} fps={fps} />}
+      {headline && <KineticHeadline text={headline} fps={fps} color="#ffffff" fontSize={64} align="left" />}
+      <div style={{ width: lineW, height: 5, borderRadius: 3, background: barColor, marginTop: 18, boxShadow: `0 0 18px ${barColor}` }} />
+      {items.length > 0 && (
+        <div style={{ marginTop: 26, display: "flex", gap: 16, flexWrap: "wrap" }}>
+          <CalloutPill title={items[0]} subtitle={items[1]} theme={theme} fps={fps} delay={12} />
+        </div>
+      )}
+    </div>
+  );
+};
+
+/** Reference-style rich animated documentary infographics */
+export const AnimatedMotionGraphic: React.FC<{
+  kind?: string;
+  items?: string[];
+  theme: ThemePalette;
+  fps: number;
+  len: number;
+  fontFamily: string;
+}> = ({ kind, items = [], theme, fps, len, fontFamily }) => {
+  const frame = useCurrentFrame();
+  const p = interpolate(frame, [0, Math.max(1, len)], [0, 1], clamp);
+  const primary = theme.accent === "#dc2626" ? "#facc15" : theme.accent;
+  const secondary = "#22d3ee";
+
+  // 1. Dual Animated Donut / Ring Percentage Charts (matches 04:15 in reference video!)
+  if (kind === "stat_chart") {
+    const labels = (items.length >= 2 ? items : ["৯০% বিশেষ বৈশিষ্ট্য", "৯৫% অনন্য তথ্য"]).slice(0, 2);
+    const extractPct = (s: string, fallback: number) => {
+      const m = fromBengaliDigits(s).match(/\d+/);
+      return m ? Math.min(100, Math.max(10, parseInt(m[0], 10))) : fallback;
+    };
+    const pct1 = extractPct(labels[0], 90);
+    const pct2 = extractPct(labels[1] || "", 95);
+    const r = 128;
+    const circ = 2 * Math.PI * r;
+    const prog1 = interpolate(frame, [4, Math.round(fps * 1.1)], [0, pct1 / 100], { ...clamp, easing: Easing.out(Easing.cubic) });
+    const prog2 = interpolate(frame, [10, Math.round(fps * 1.3)], [0, pct2 / 100], { ...clamp, easing: Easing.out(Easing.cubic) });
+
+    return (
+      <AbsoluteFill style={{ pointerEvents: "none" }}>
+        <svg viewBox="0 0 1280 540" style={{ position: "absolute", left: 320, top: 310, width: 1280, height: 540 }}>
+          {/* Left Ring */}
+          <g transform="translate(300, 220)">
+            <circle r={r} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="22" />
+            <circle r={r} fill="none" stroke={primary} strokeWidth="22" strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={circ * (1 - prog1)} transform="rotate(-90)" />
+            <text y="6" fill={primary} fontSize="64" fontWeight="700" textAnchor="middle" fontFamily={fontFamily}>
+              {toBengaliDigits(Math.round(prog1 * 100))}%
+            </text>
+            <text y="52" fill={theme.text} fontSize="22" textAnchor="middle" fontFamily={fontFamily}>
+              {labels[0].slice(0, 22)}
+            </text>
+          </g>
+
+          {/* Center Connector Badge */}
+          <line x1="455" y1="220" x2="825" y2="220" stroke={theme.grid} strokeWidth="2" strokeDasharray="6 8" />
+          <rect x="570" y="190" width="140" height="60" rx="8" fill={theme.panel} stroke={theme.grid} strokeWidth="1.5" />
+          <text x="640" y="227" fill={theme.text} fontSize="20" fontWeight="700" textAnchor="middle" fontFamily={fontFamily}>তথ্য বিশ্লেষণ</text>
+
+          {/* Right Ring */}
+          <g transform="translate(980, 220)">
+            <circle r={r} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="22" />
+            <circle r={r} fill="none" stroke={secondary} strokeWidth="22" strokeLinecap="round" strokeDasharray={circ} strokeDashoffset={circ * (1 - prog2)} transform="rotate(-90)" />
+            <text y="6" fill={secondary} fontSize="64" fontWeight="700" textAnchor="middle" fontFamily={fontFamily}>
+              {toBengaliDigits(Math.round(prog2 * 100))}%
+            </text>
+            <text y="52" fill={theme.text} fontSize="22" textAnchor="middle" fontFamily={fontFamily}>
+              {(labels[1] || "বিশ্লেষণ").slice(0, 22)}
+            </text>
+          </g>
+        </svg>
+      </AbsoluteFill>
+    );
+  }
+
+  // 2. Hub-and-Spoke Curved Network Map (matches 05:15 in reference video!)
+  if (kind === "map_marker") {
+    const nodes = (items.length ? items : ["কেন্দ্রীয় অবস্থান", "উত্তর সংযোগ", "দক্ষিণ পথ"]).slice(0, 3);
+    const draw1 = interpolate(frame, [4, Math.round(fps * 1.1)], [520, 0], clamp);
+    const draw2 = interpolate(frame, [10, Math.round(fps * 1.3)], [520, 0], clamp);
+    const draw3 = interpolate(frame, [16, Math.round(fps * 1.5)], [520, 0], clamp);
+    const pulse = 22 + (frame % 42) * 2.1;
+    const pulseOp = interpolate(frame % 42, [0, 41], [0.65, 0], clamp);
+
+    return (
+      <svg viewBox="0 0 1100 620" style={{ position: "absolute", right: 96, top: 240, width: 1100, height: 620 }}>
+        {/* Radar circles */}
+        {[120, 220, 320].map((rad, i) => (
+          <circle key={i} cx="540" cy="340" r={rad} fill="none" stroke="rgba(255,255,255,0.08)" strokeDasharray="6 8" />
+        ))}
+        {/* Curved routes */}
+        <path d="M 540 340 Q 410 180 220 140" fill="none" stroke={primary} strokeWidth="4" strokeDasharray="10 8" strokeDashoffset={draw1} />
+        <path d="M 540 340 Q 670 150 860 120" fill="none" stroke="#f59e0b" strokeWidth="4" strokeDasharray="10 8" strokeDashoffset={draw2} />
+        <path d="M 540 340 Q 760 280 960 260" fill="none" stroke={secondary} strokeWidth="4" strokeDasharray="10 8" strokeDashoffset={draw3} />
+        <path d="M 540 340 Q 380 430 220 490" fill="none" stroke="#4ade80" strokeWidth="4" strokeDasharray="10 8" strokeDashoffset={draw3} />
+
+        {/* Destination Nodes */}
+        <circle cx="220" cy="140" r="10" fill={primary} />
+        <text x="220" y="114" fill={theme.text} fontSize="22" fontWeight="600" textAnchor="middle" fontFamily={fontFamily}>{nodes[0]}</text>
+
+        <circle cx="860" cy="120" r="10" fill="#f59e0b" />
+        <text x="860" y="94" fill={theme.text} fontSize="22" fontWeight="600" textAnchor="middle" fontFamily={fontFamily}>{nodes[1] || "সংযোগ ২"}</text>
+
+        <circle cx="960" cy="260" r="10" fill={secondary} />
+        <text x="960" y="234" fill={theme.text} fontSize="22" fontWeight="600" textAnchor="middle" fontFamily={fontFamily}>{nodes[2] || "সংযোগ ৩"}</text>
+
+        {/* Central Pulsing Hub */}
+        <circle cx="540" cy="340" r={pulse} fill="none" stroke={theme.accent} strokeWidth="3" opacity={pulseOp} />
+        <circle cx="540" cy="340" r="18" fill={theme.accent} stroke={primary} strokeWidth="5" />
+      </svg>
+    );
+  }
+
+  // 3. Animated Numbered Step Cards + Rotating Emblem (matches 06:04 & 06:28 in reference video!)
+  if (kind === "timeline") {
+    const steps = (items.length ? items : ["প্রথম ধাপ", "দ্বিতীয় ধাপ", "তৃতীয় ধাপ"]).slice(0, 3);
+    const rot = frame * 0.8;
+    const emblemSp = spring({ frame, fps, config: { damping: 14, stiffness: 120 } });
+    return (
+      <AbsoluteFill style={{ pointerEvents: "none" }}>
+        {/* Left numbered animated cards */}
+        <div style={{ position: "absolute", left: 96, top: 310, width: 780, display: "flex", flexDirection: "column", gap: 22, fontFamily }}>
+          {steps.map((stepTxt, i) => {
+            const st = 6 + i * 10;
+            const sp = spring({ frame: Math.max(0, frame - st), fps, config: { damping: 14, stiffness: 150 } });
+            const tx = interpolate(sp, [0, 1], [-48, 0]);
+            const op = interpolate(frame, [st, st + 8], [0, 1], clamp);
+            return (
+              <div
+                key={i}
+                style={{
+                  opacity: op,
+                  transform: `translateX(${tx.toFixed(1)}px)`,
+                  background: "rgba(15, 23, 42, 0.85)",
+                  border: `1.5px solid ${i === 0 ? primary : theme.grid}`,
+                  borderLeft: `6px solid ${i === 0 ? primary : secondary}`,
+                  borderRadius: 12,
+                  padding: "18px 26px",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 18,
+                  boxShadow: "0 10px 28px rgba(0,0,0,0.4)",
+                }}
+              >
+                <span style={{ fontSize: 32, fontWeight: 700, color: i === 0 ? primary : secondary }}>
+                  ০{toBengaliDigits(i + 1)}
+                </span>
+                <span style={{ fontSize: 28, fontWeight: 600, color: "#ffffff", lineHeight: 1.35 }}>{stepTxt}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Right pulsing rotating shield/ring emblem */}
+        <svg viewBox="0 0 460 460" style={{ position: "absolute", right: 120, top: 270, width: 460, height: 460 }}>
+          <g transform={`translate(230,230) scale(${emblemSp.toFixed(3)})`}>
+            <circle r="195" fill="none" stroke={theme.grid} strokeWidth="2" strokeDasharray="8 10" transform={`rotate(${rot.toFixed(1)})`} />
+            <circle r="150" fill="none" stroke={primary} strokeWidth="3" strokeDasharray="110 35" opacity="0.75" transform={`rotate(${(-rot * 1.2).toFixed(1)})`} />
+            <path d="M 0 -95 L 82 -58 L 82 18 C 82 72 44 108 0 124 C -44 108 -82 72 -82 18 L -82 -58 Z" fill="rgba(16, 185, 129, 0.2)" stroke={primary} strokeWidth="5" />
+            <circle r="24" fill={primary} opacity="0.9" />
+          </g>
+        </svg>
+      </AbsoluteFill>
+    );
+  }
+
+  // 4. Default Full-Screen Kinetic Graphic (rotating orbital system + pulsing nodes)
+  const rot1 = frame * 0.7;
+  const rot2 = -frame * 1.1;
+  const breathe = 0.94 + Math.sin(frame / 18) * 0.06;
+  return (
+    <svg viewBox="0 0 640 640" style={{ position: "absolute", right: 96, top: 200, width: 600, height: 600 }}>
+      <g transform={`translate(320,320) scale(${breathe.toFixed(3)})`}>
+        <circle r="245" fill="none" stroke={theme.grid} strokeWidth="2" strokeDasharray="12 10" transform={`rotate(${rot1.toFixed(1)})`} />
+        <circle r="185" fill="none" stroke={primary} strokeWidth="2.5" strokeDasharray="90 28" opacity="0.75" transform={`rotate(${rot2.toFixed(1)})`} />
+        <circle r="120" fill="none" stroke={secondary} strokeWidth="1.5" opacity="0.55" transform={`rotate(${(rot1 * 1.4).toFixed(1)})`} />
+        <circle cx={Math.cos(p * Math.PI * 2) * 185} cy={Math.sin(p * Math.PI * 2) * 185} r="8" fill={primary} />
+        <circle cx={Math.cos(-p * Math.PI * 2 + 1.5) * 245} cy={Math.sin(-p * Math.PI * 2 + 1.5) * 245} r="6" fill={secondary} />
+      </g>
+    </svg>
+  );
+};
+
 export const AnimatedPresetCard: React.FC<{
   preset?: string;
   tag?: string;
@@ -306,40 +608,66 @@ export const AnimatedPresetCard: React.FC<{
   position?: string;
   theme: ThemePalette;
   fps: number;
+  len: number;
+  overVideo?: boolean;
   fontFamily: string;
-}> = ({ preset, tag, headline, items = [], position = "left", theme, fps, fontFamily }) => {
+}> = ({ preset, tag, headline, items = [], position = "left", theme, fps, len, overVideo = false, fontFamily }) => {
   const frame = useCurrentFrame();
   const key = (preset || "HDR-DROP").toUpperCase();
   const alignRight = position === "right";
+  const exitOp = interpolate(frame, [Math.max(12, len - 10), len], [1, 0], clamp);
+  const textColor = overVideo ? "#ffffff" : theme.text;
+  const barColor = theme.accent === "#dc2626" ? "#facc15" : theme.accent;
+
+  // Clean open typography — NO pink box or bulky background card!
   const baseStyle: React.CSSProperties = {
     position: "absolute",
     left: alignRight ? "auto" : 96,
     right: alignRight ? 96 : "auto",
-    top: 86,
+    top: 84,
     maxWidth: 1120,
     textAlign: alignRight ? "right" : "left",
     fontFamily,
+    opacity: exitOp,
   };
 
-  if (key === "TAG-WIPE") {
-    const wipe = interpolate(frame, [0, Math.round(fps * 0.35)], [100, 0], { ...clamp, easing: Easing.out(Easing.cubic) });
-    const barScale = interpolate(frame, [0, Math.round(fps * 0.2)], [0, 1], clamp);
+  if (key === "CTA-STAGGER") {
+    const lineW = interpolate(frame, [4, Math.round(fps * 0.6)], [0, 560], { ...clamp, easing: Easing.out(Easing.cubic) });
+    const ctaPills = [
+      { label: "কমেন্ট করুন", sub: "আপনার মতামত জানান", bg: "#0ea5e9" },
+      { label: "লাইক দিন", sub: "ভিডিওটি ভালো লাগলে", bg: "#22c55e" },
+      { label: "সাবস্ক্রাইব", sub: "নতুন ভিডিওর জন্য", bg: "#ef4444" },
+    ];
     return (
-      <div style={baseStyle}>
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 14, flexDirection: alignRight ? "row-reverse" : "row" }}>
-          <div style={{ width: 6, height: 68, background: theme.accent, transform: `scaleY(${barScale})`, transformOrigin: "top" }} />
-          <div style={{ clipPath: `inset(0 ${wipe.toFixed(1)}% 0 0)` }}>
-            {tag && <div style={{ fontSize: 22, fontWeight: 700, color: theme.accent, marginBottom: 4 }}>{tag}</div>}
-            {headline && <div style={{ fontSize: 50, fontWeight: 700, lineHeight: 1.32, color: theme.text, textShadow: "0 4px 20px rgba(0,0,0,.65)" }}>{headline}</div>}
-          </div>
+      <div style={{ position: "absolute", left: 96, right: 96, top: 240, textAlign: "center", fontFamily, opacity: exitOp }}>
+        {tag && <EditorialTagBar text={tag} theme={theme} fps={fps} />}
+        {headline && <KineticHeadline text={headline} fps={fps} color="#ffffff" fontSize={58} align="center" />}
+        <div style={{ width: lineW, height: 5, borderRadius: 3, background: barColor, margin: "20px auto 34px", boxShadow: `0 0 18px ${barColor}` }} />
+        <div style={{ display: "inline-flex", gap: 22, flexWrap: "wrap", justifyContent: "center" }}>
+          {ctaPills.map((pill, i) => {
+            const st = 10 + i * 8;
+            const sp = spring({ frame: Math.max(0, frame - st), fps, config: { damping: 13, stiffness: 160 } });
+            const op = interpolate(frame, [st, st + 7], [0, 1], clamp);
+            return (
+              <div
+                key={i}
+                style={{
+                  opacity: op,
+                  transform: `scale(${interpolate(sp, [0, 1], [0.78, 1]).toFixed(3)})`,
+                  background: pill.bg,
+                  color: "#ffffff",
+                  padding: "16px 34px",
+                  borderRadius: 999,
+                  boxShadow: "0 10px 28px rgba(0,0,0,0.42)",
+                  textAlign: "left",
+                }}
+              >
+                <div style={{ fontSize: 27, fontWeight: 700, lineHeight: 1.2 }}>{pill.label}</div>
+                <div style={{ fontSize: 16, opacity: 0.92, marginTop: 2 }}>{pill.sub}</div>
+              </div>
+            );
+          })}
         </div>
-        {items.length > 0 && (
-          <div style={{ marginTop: 22, display: "flex", gap: 14, flexWrap: "wrap", justifyContent: alignRight ? "flex-end" : "flex-start", opacity: interpolate(frame, [8, 18], [0, 1], clamp) }}>
-            {items.slice(0, 3).map((x, i) => (
-              <div key={i} style={{ fontSize: 24, lineHeight: 1.35, color: theme.text, padding: "10px 20px", background: theme.panel, borderLeft: `4px solid ${theme.accent}`, borderRadius: 6 }}>{x}</div>
-            ))}
-          </div>
-        )}
       </div>
     );
   }
@@ -349,21 +677,16 @@ export const AnimatedPresetCard: React.FC<{
     const targetNum = rawNumMatch ? parseFloat(rawNumMatch[0].replace(/,/g, "")) : 100;
     const rollP = interpolate(frame, [0, Math.round(fps * 0.9)], [0, 1], { ...clamp, easing: Easing.out(Easing.cubic) });
     const currentVal = Math.round(targetNum * rollP);
-    const popScale = frame > Math.round(fps * 0.9)
-      ? 1 + Math.sin(Math.min(1, (frame - fps * 0.9) / 8) * Math.PI) * 0.08
-      : 1;
     return (
       <div style={baseStyle}>
-        {tag && <div style={{ display: "inline-block", background: theme.accent, color: "#fff", padding: "7px 18px", borderRadius: 4, fontSize: 22, fontWeight: 700, marginBottom: 14 }}>{tag}</div>}
-        <div style={{ fontSize: 82, fontWeight: 700, lineHeight: 1.2, color: theme.accent, transform: `scale(${popScale.toFixed(3)})`, transformOrigin: alignRight ? "right center" : "left center", textShadow: `0 6px 28px rgba(0,0,0,.65)` }}>
+        {tag && <EditorialTagBar text={tag} theme={theme} fps={fps} />}
+        <div style={{ fontSize: 82, fontWeight: 700, lineHeight: 1.15, color: barColor, textShadow: TEXT_SHADOW_CRISP }}>
           {toBengaliDigits(currentVal)}
         </div>
-        {headline && <div style={{ fontSize: 44, fontWeight: 700, lineHeight: 1.35, color: theme.text, marginTop: 8, textShadow: "0 4px 18px rgba(0,0,0,.65)" }}>{headline}</div>}
+        {headline && <KineticHeadline text={headline} fps={fps} color={textColor} fontSize={48} align={alignRight ? "right" : "left"} />}
         {items.length > 0 && (
-          <div style={{ marginTop: 22, display: "flex", gap: 14, flexWrap: "wrap", justifyContent: alignRight ? "flex-end" : "flex-start" }}>
-            {items.slice(0, 3).map((x, i) => (
-              <div key={i} style={{ fontSize: 24, lineHeight: 1.35, color: theme.text, padding: "10px 20px", background: theme.panel, borderLeft: `4px solid ${theme.accent}`, borderRadius: 6 }}>{x}</div>
-            ))}
+          <div style={{ marginTop: 22 }}>
+            <CalloutPill title={items[0]} subtitle={items[1]} theme={theme} fps={fps} delay={12} />
           </div>
         )}
       </div>
@@ -371,93 +694,30 @@ export const AnimatedPresetCard: React.FC<{
   }
 
   if (key === "BIG-STAMP") {
-    const stampScale = interpolate(frame, [0, Math.round(fps * 0.25)], [1.55, 1.0], { ...clamp, easing: Easing.out(Easing.cubic) });
-    const stampOp = interpolate(frame, [0, Math.round(fps * 0.2)], [0, 1], clamp);
-    const glow = 14 + Math.sin((frame / fps) * Math.PI * 2) * 8;
+    const stampScale = interpolate(frame, [0, Math.round(fps * 0.25)], [1.35, 1.0], { ...clamp, easing: Easing.out(Easing.cubic) });
+    const stampOp = interpolate(frame, [0, Math.round(fps * 0.18)], [0, 1], clamp) * exitOp;
+    const lineW = interpolate(frame, [6, Math.round(fps * 0.6)], [0, 360], { ...clamp, easing: Easing.out(Easing.cubic) });
     return (
       <div style={{ ...baseStyle, opacity: stampOp, transform: `scale(${stampScale.toFixed(3)})`, transformOrigin: alignRight ? "right top" : "left top" }}>
-        {tag && <div style={{ display: "inline-block", background: theme.accent, color: "#fff", padding: "8px 20px", borderRadius: 4, fontSize: 23, fontWeight: 700, marginBottom: 16 }}>{tag}</div>}
+        {tag && <EditorialTagBar text={tag} theme={theme} fps={fps} />}
         {headline && (
-          <div style={{ fontSize: 64, fontWeight: 700, lineHeight: 1.32, color: theme.text, textShadow: `0 0 ${glow.toFixed(1)}px ${theme.accent}, 0 6px 24px rgba(0,0,0,.75)` }}>
+          <div style={{ fontSize: 62, fontWeight: 700, lineHeight: 1.32, color: textColor, textShadow: TEXT_SHADOW_CRISP }}>
             {headline}
           </div>
         )}
+        <div style={{ width: lineW, height: 5, borderRadius: 3, background: barColor, marginTop: 14, marginLeft: alignRight ? "auto" : 0 }} />
       </div>
     );
   }
 
-  if (key === "QUOTE-STAGGER") {
-    const words = (headline || "").normalize("NFC").split(/\s+/).filter(Boolean);
-    return (
-      <div style={{ ...baseStyle, background: theme.panel, padding: "28px 34px", borderRadius: 12, borderLeft: `6px solid ${theme.accent}` }}>
-        {tag && <div style={{ fontSize: 22, fontWeight: 700, color: theme.accent, marginBottom: 12 }}>{tag}</div>}
-        <div style={{ fontSize: 44, fontWeight: 600, lineHeight: 1.42, color: theme.text, letterSpacing: 0 }}>
-          {words.map((w, i) => {
-            const startF = i * Math.max(2, Math.round(fps * 0.08));
-            const op = interpolate(frame, [startF, startF + 6], [0, 1], clamp);
-            const ty = interpolate(frame, [startF, startF + 6], [16, 0], { ...clamp, easing: Easing.out(Easing.quad) });
-            return (
-              <span key={i} style={{ display: "inline-block", marginRight: 12, opacity: op, transform: `translateY(${ty.toFixed(1)}px)` }}>
-                {w}
-              </span>
-            );
-          })}
-        </div>
-      </div>
-    );
-  }
-
-  if (key === "CTA-STAGGER") {
-    const pulse = 1 + Math.sin((frame / fps) * Math.PI * 1.6) * 0.035;
-    return (
-      <div style={{ ...baseStyle, left: 96, right: 96, textAlign: "center", top: 220, maxWidth: "none" }}>
-        {headline && (
-          <div style={{ fontSize: 56, fontWeight: 700, lineHeight: 1.35, color: theme.text, opacity: interpolate(frame, [0, 10], [0, 1], clamp), transform: `translateY(${interpolate(frame, [0, 10], [26, 0], clamp)}px)`, textShadow: "0 4px 20px rgba(0,0,0,.65)" }}>
-            {headline}
-          </div>
-        )}
-        <div style={{ marginTop: 28, display: "inline-flex", gap: 16, flexWrap: "wrap", justifyContent: "center" }}>
-          {(items.length ? items : ["সাবস্ক্রাইব করুন", "লাইক ও শেয়ার করুন"]).slice(0, 3).map((x, i) => {
-            const st = 8 + i * 5;
-            const op = interpolate(frame, [st, st + 8], [0, 1], clamp);
-            return (
-              <div key={i} style={{ opacity: op, transform: i === 0 ? `scale(${pulse.toFixed(3)})` : undefined, background: i === 0 ? theme.accent : theme.panel, color: i === 0 ? "#fff" : theme.text, padding: "14px 28px", borderRadius: 999, fontSize: 26, fontWeight: 700, boxShadow: i === 0 ? `0 0 24px ${theme.accent}` : "none" }}>
-                {x}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  }
-
-  const sp = spring({ frame, fps, config: { damping: 14, stiffness: 150, mass: 0.8 } });
-  const dropY = interpolate(sp, [0, 1], [-36, 0]);
-  const dropScale = interpolate(sp, [0, 1], [0.92, 1.0]);
-  const shinePos = interpolate(frame, [6, Math.round(fps * 0.75)], [-40, 140], clamp);
+  // Clean word-by-word documentary typography (HDR-DROP, TAG-WIPE, QUOTE-STAGGER)
   return (
-    <div style={{ ...baseStyle, opacity: interpolate(frame, [0, 10], [0, 1], clamp), transform: `translateY(${dropY.toFixed(1)}px) scale(${dropScale.toFixed(3)})`, transformOrigin: alignRight ? "right top" : "left top" }}>
-      {tag && (
-        <div style={{ position: "relative", overflow: "hidden", display: "inline-block", background: theme.accent, padding: "9px 22px", fontSize: 24, fontWeight: 700, color: "#fff", borderRadius: 6, marginBottom: 18 }}>
-          <span>{tag}</span>
-          <div style={{ position: "absolute", inset: 0, background: `linear-gradient(110deg, transparent ${shinePos - 18}%, rgba(255,255,255,0.45) ${shinePos}%, transparent ${shinePos + 18}%)`, pointerEvents: "none" }} />
-        </div>
-      )}
-      {headline && (
-        <div style={{ fontSize: 56, lineHeight: 1.35, fontWeight: 700, color: theme.text, textShadow: "0 4px 22px rgba(0,0,0,.65)", maxWidth: 1120, letterSpacing: 0 }}>
-          {headline}
-        </div>
-      )}
+    <div style={baseStyle}>
+      {tag && <EditorialTagBar text={tag} theme={theme} fps={fps} />}
+      {headline && <KineticHeadline text={headline} fps={fps} color={textColor} fontSize={54} align={alignRight ? "right" : "left"} />}
       {items.length > 0 && (
-        <div style={{ marginTop: 26, display: "flex", gap: 16, flexWrap: "wrap", justifyContent: alignRight ? "flex-end" : "flex-start" }}>
-          {items.slice(0, 3).map((x, i) => {
-            const itemOp = interpolate(frame, [6 + i * 4, 14 + i * 4], [0, 1], clamp);
-            return (
-              <div key={i} style={{ opacity: itemOp, fontSize: 25, lineHeight: 1.35, color: theme.text, padding: "11px 22px", background: theme.panel, borderLeft: `4px solid ${theme.accent}`, borderRadius: 6, backdropFilter: "blur(8px)" }}>
-                {x}
-              </div>
-            );
-          })}
+        <div style={{ marginTop: 24, display: "flex", justifyContent: alignRight ? "flex-end" : "flex-start" }}>
+          <CalloutPill title={items[0]} subtitle={items[1]} theme={theme} fps={fps} delay={12} />
         </div>
       )}
     </div>
@@ -477,7 +737,7 @@ export const KaraokeSubtitleBar: React.FC<{
 
   const cueStartF = Math.floor(active.start * fps);
   const cueEndF = Math.ceil(active.end * fps);
-  const boxIn = interpolate(frame, [cueStartF, cueStartF + 6], [0.92, 1.0], clamp);
+  const boxIn = interpolate(frame, [cueStartF, cueStartF + 6], [0.95, 1.0], clamp);
   const boxOp = Math.min(
     interpolate(frame, [cueStartF, cueStartF + 5], [0, 1], clamp),
     interpolate(frame, [Math.max(cueStartF + 5, cueEndF - 5), cueEndF], [1, 0], clamp)
@@ -504,6 +764,7 @@ export const KaraokeSubtitleBar: React.FC<{
   const pageStart = Math.floor(activeIdx / PAGE_SIZE) * PAGE_SIZE;
   const visibleWords = words.slice(pageStart, pageStart + PAGE_SIZE);
   const keywordSet = new Set((active.keywords || []).map((k) => k.normalize("NFC").trim()));
+  const kwColor = theme.accent === "#dc2626" ? "#facc15" : theme.accent;
 
   return (
     <div
@@ -511,7 +772,7 @@ export const KaraokeSubtitleBar: React.FC<{
         position: "absolute",
         left: 160,
         right: 160,
-        bottom: 58,
+        bottom: 54,
         display: "flex",
         justifyContent: "center",
         pointerEvents: "none",
@@ -521,10 +782,9 @@ export const KaraokeSubtitleBar: React.FC<{
         style={{
           opacity: boxOp,
           transform: `scale(${boxIn.toFixed(3)})`,
-          background: theme.panel,
-          border: `1px solid ${theme.grid}`,
-          borderRadius: 16,
-          padding: "14px 28px",
+          background: "rgba(10, 14, 22, 0.78)",
+          borderRadius: 10,
+          padding: "12px 26px",
           maxWidth: 1480,
           textAlign: "center",
           fontFamily,
@@ -535,7 +795,7 @@ export const KaraokeSubtitleBar: React.FC<{
           wordBreak: "keep-all",
           overflowWrap: "break-word",
           fontFeatureSettings: '"kern" 1, "liga" 1, "calt" 1',
-          boxShadow: "0 10px 30px rgba(0,0,0,0.45)",
+          boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
         }}
       >
         {visibleWords.map((w, i) => {
@@ -545,9 +805,9 @@ export const KaraokeSubtitleBar: React.FC<{
           const isCurrent = nowSec >= w.start && nowSec <= w.end + 0.08;
           const stripped = cleanWord.replace(/[।.,!?;:'"()[\]{}]/g, "");
           const isKeyword = keywordSet.has(cleanWord) || keywordSet.has(stripped);
-          const opacity = frame < wStartF ? 0.32 : interpolate(p, [0, 1], [0.35, 1.0]);
-          const ty = frame < wStartF ? 8 : interpolate(p, [0, 1], [8, 0]);
-          const kwScale = isKeyword && isCurrent ? 1.12 : isCurrent ? 1.04 : 1.0;
+          const opacity = frame < wStartF ? 0.52 : interpolate(p, [0, 1], [0.55, 1.0]);
+          const ty = frame < wStartF ? 4 : interpolate(p, [0, 1], [4, 0]);
+          const kwScale = isKeyword && isCurrent ? 1.08 : 1.0;
 
           return (
             <span
@@ -556,11 +816,11 @@ export const KaraokeSubtitleBar: React.FC<{
                 display: "inline-block",
                 marginRight: 10,
                 opacity,
-                color: isKeyword ? theme.accent : isCurrent ? theme.text : theme.muted,
+                color: isKeyword ? kwColor : "#ffffff",
                 transform: `translateY(${ty.toFixed(1)}px) scale(${kwScale.toFixed(3)})`,
                 textShadow: isKeyword
-                  ? `0 0 14px ${theme.accent}, 0 2px 6px rgba(0,0,0,0.85)`
-                  : "0 2px 8px rgba(0,0,0,0.85)",
+                  ? `0 0 12px ${kwColor}, 0 2px 6px rgba(0,0,0,0.9)`
+                  : "0 2px 6px rgba(0,0,0,0.9)",
               }}
             >
               {cleanWord}
