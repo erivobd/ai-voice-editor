@@ -32,6 +32,11 @@ on:
         required: false
         default: "false"
         type: string
+      has_custom_scene_plan:
+        description: "Whether custom scene_plan.json was provided (true/false)"
+        required: false
+        default: "false"
+        type: string
 
 permissions:
   contents: write
@@ -96,6 +101,7 @@ jobs:
           ENABLE_BG_MUSIC: ${{ inputs.bg_music }}
           VIDEO_THEME: ${{ inputs.video_theme }}
           HAS_CUSTOM_SRT: ${{ inputs.has_custom_srt }}
+          HAS_CUSTOM_SCENE_PLAN: ${{ inputs.has_custom_scene_plan }}
           AUDIO_LANGUAGE: bn
           WORK_DIR: /tmp/doc_job
           WHISPER_MODEL: small
