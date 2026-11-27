@@ -75,3 +75,21 @@ Run `python -m py_compile processor/*.py`, `python -m unittest discover -s tests
 
 ### v5.1 validation scope
 Python syntax/tests and JavaScript syntax checks validate source-level behavior. A real 1080p render must still be exercised in GitHub Actions with the user's configured free-tier provider/media secrets and available worker minutes. The included renderer is a first integrated Remotion pass; visual quality must be assessed on a rendered sample before calling the editing upgrade complete.
+
+
+## Remotion video themes (v5.2 update)
+
+The six dashboard themes are passed into the in-app Remotion scene JSON as `videoTheme` and applied to Remotion graphic backgrounds, title/tag accents, charts, timelines, map markers, subtitle panels and decorative elements. Stock footage, narration, timing and story content are not changed by the theme. Keys: `crimson_noir`, `cinematic_dark`, `vox_colorful`, `editorial_paper`, `vibrant_gradient`, `minimal_light`. Default/fallback: `crimson_noir`.
+
+
+## v5.3 Landscape Documentary Motion, Karaoke & Storyboard Upgrade
+- **16:9 Landscape Preset Library (`processor/director.py`):** Upgrades the free-tier AI director prompt (Gemini / Groq / OpenRouter) with story beats (`hook`, `setup`, `rising`, `climax`, `consequence`, `lesson`, `cta`), camera presets (`CAM-PUSH`, `CAM-PULL`, `CAM-PAN-L`, `CAM-PAN-R`, `CAM-DRIFT`, `CAM-PUNCH`, `CAM-SHAKE`), text presets (`HDR-DROP`, `TAG-WIPE`, `NUM-ROLL`, `QUOTE-STAGGER`, `BIG-STAMP`, `CTA-STAGGER`), transitions (`TR-CUT`, `TR-DISSOLVE`, `TR-FADEBLACK`, `TR-WHIP`, `TR-WIPE`, `TR-ZOOMTHRU`, `TR-FLASH`), Bengali highlight keywords, and `music_mode` (`normal`, `duck`, `mute`) with safe automatic fallbacks and a 3-use cap on `CAM-SHAKE` + `TR-FLASH`.
+- **Word-Level `SUB-KARAOKE` & Animated Presets (`remotion/src/kit.tsx`, `Video.tsx`, `remotion_render.py`):** Passes Whisper word timestamps (or Bengali-safe space-split fallback timings for custom SRT) and scene keywords into `scene.json`, rendering word-by-word karaoke highlights, Bengali numeral rolling (`NUM-ROLL`), all camera/text/transition presets, 5% 16:9 safe zones, and subtle vignette + 3% film grain across all 6 themes.
+- **YouTube `-14 LUFS` Mastering & Music Mute (`remotion_render.py`):** Normalizes voiceover to `-14 LUFS` (`TP=-1.0`) and dynamically ducks or mutes background music on dramatic scenes.
+- **Visual Storyboard QC (`quality_control.py`, `pipeline.py`):** Extracts mid-scene thumbnails and uploads a self-contained Bengali `storyboard.html` to GitHub Releases alongside `final_documentary.mp4`.
+- **HyperFrames Motion Reference Docs (`docs/hyperframes-references/`):** Bundles the HyperFrames motion, captions, overlays, sound, and review reference guides for future motion-design iteration.
+
+
+## v5.4 Footage + Picture Mix & Scene-Aware Visual Effects
+- **First-Class Video + Photo Mixing (`director.py`, `footage.py`):** Adds Pexels Photos API alongside Pixabay Photos, Wikimedia CC0, and NASA images. The AI director actively mixes ~55-65% HD stock videos (`media_preference: "video"`) and ~20-25% Ken Burns animated photos (`media_preference: "photo"`) plus explainer graphics, automatically falling back between photo and video when needed.
+- **Context-Aware Documentary Visual Effects (`director.py`, `kit.tsx`, `Video.tsx`):** Supports 7 deterministic Remotion visual effects chosen only when the story calls for them: `old_footage` (sepia, animated film scratches, dust & flicker), `archival_photo` (museum border & warm grain), `vhs_retro` (scanlines, tracking bar & PLAY timestamp), `noir_bw` (high-contrast monochrome), `cctv_cam` (surveillance tint, scanlines & corner brackets), `dream_glow` (warm light leak), and `glitch_pulse` (brief RGB glitch entry), plus `none` for clean modern shots.
