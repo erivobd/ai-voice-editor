@@ -93,3 +93,23 @@ The six dashboard themes are passed into the in-app Remotion scene JSON as `vide
 ## v5.4 Footage + Picture Mix & Scene-Aware Visual Effects
 - **First-Class Video + Photo Mixing (`director.py`, `footage.py`):** Adds Pexels Photos API alongside Pixabay Photos, Wikimedia CC0, and NASA images. The AI director actively mixes ~55-65% HD stock videos (`media_preference: "video"`) and ~20-25% Ken Burns animated photos (`media_preference: "photo"`) plus explainer graphics, automatically falling back between photo and video when needed.
 - **Context-Aware Documentary Visual Effects (`director.py`, `kit.tsx`, `Video.tsx`):** Supports 7 deterministic Remotion visual effects chosen only when the story calls for them: `old_footage` (sepia, animated film scratches, dust & flicker), `archival_photo` (museum border & warm grain), `vhs_retro` (scanlines, tracking bar & PLAY timestamp), `noir_bw` (high-contrast monochrome), `cctv_cam` (surveillance tint, scanlines & corner brackets), `dream_glow` (warm light leak), and `glitch_pulse` (brief RGB glitch entry), plus `none` for clean modern shots.
+
+
+## v5.5 Custom Scene Plan Upload & Dashboard Storyboard
+- **Optional Custom `scene_plan.json` Upload (`public/index.html`, `app.js`, `server.js`, `pipeline.py`, `director.py`):** Upload or paste a `scene_plan.json` created in the Gemini app (listening directly to your audio) to bypass GitHub Actions LLM API calls completely while still validating and normalizing all presets, effects, and timestamps.
+- **Dashboard Storyboard Download (`server.js`, `index.html`, `app.js`):** Adds `storyboard.html` directly to the result card's download bar.
+- **Ready-to-Use Prompt (`docs/GEMINI_SCENE_PLAN_PROMPT.txt`):** Bundled prompt to generate both `subtitles.srt` and `scene_plan.json` from any Bengali voiceover in the Gemini app.
+
+
+## v5.6 Clean Bright Footage, Animated Intro & Kinetic Motion Graphics
+- **Removed black shadow overlay (`remotion/src/Video.tsx`, `kit.tsx`):** Removes the 50% dark gradient shadow, heavy global vignette, and `brightness(.84)` dimming so HD stock footage stays crisp and bright. Text overlays over video use a compact glass card behind the text only.
+- **Animated Documentary Intro (`kit.tsx`):** Scene 1 now renders `CinematicIntroCard` with spring-animated tag shine, word-by-word kinetic title reveal, expanding accent bar, and smooth exit fade.
+- **Fully Animated Motion Graphics (`kit.tsx`):** Replaces static SVGs with `AnimatedMotionGraphic` (line-drawing timeline with spring-popping pulsing milestones, spring-rising bar charts, route-drawing radar-pulsing map markers, and rotating orbital rings).
+- **Word-Safe Bengali Headings (`director.py`):** Fixes mid-word truncation so Bengali headings never cut off a word halfway.
+
+
+## v5.7 Reference Documentary Style (Clean Typography, Rich Motion Infographics & Reliable Photos)
+- **Light Scrim & Clean Floating Text (`Video.tsx`, `kit.tsx`):** Removes bulky/pink card boxes behind headlines and uses only a subtle `rgba(0,0,0,0.22)` readability scrim when text floats over footage. Headlines render large, crisp, and bold word-by-word with a sharp accent tag bar and compact glowing callout pills.
+- **Reference-Style Animated Infographics (`kit.tsx`):** Adds animated dual-ring percentage donut charts (`stat_chart`), hub-and-spoke curved network maps (`map_marker`), numbered step cards with rotating shield emblem (`timeline`), and a 3-pill animated ending CTA (`CTA-STAGGER`).
+- **Guaranteed Photo + Video Mix (`footage.py`, `director.py`):** Increases default photo ratio to ~33% of stock scenes and adds simplified-keyword fallback retries in `_find_photo_asset()` so real HD Ken Burns photos load reliably instead of dropping back to graphics.
+- **Custom Scene Plan in Web App (`public/`, `server.js`, `pipeline.py`):** Full support for uploading/pasting `scene_plan.json` directly in the web dashboard to skip GitHub Actions LLM calls.

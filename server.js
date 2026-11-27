@@ -10,6 +10,7 @@ const PORT = Number(process.env.PORT || 3000);
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 150);
 const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
 const MAX_SRT_BYTES = 2 * 1024 * 1024;
+const MAX_SCENE_PLAN_BYTES = 5 * 1024 * 1024;
 
 const GITHUB_TOKEN = (process.env.GITHUB_TOKEN || "").trim();
 const GITHUB_OWNER = (process.env.GITHUB_OWNER || "").trim();
@@ -20,6 +21,7 @@ const APP_ACCESS_PIN = (process.env.APP_ACCESS_PIN || "").trim();
 
 const ALLOWED_AUDIO_EXTS = new Set([".mp3", ".wav", ".m4a", ".aac", ".flac"]);
 const ALLOWED_SRT_EXTS = new Set([".srt", ".txt"]);
+const ALLOWED_PLAN_EXTS = new Set([".json", ".txt"]);
 const VALID_THEMES = new Set([
   "cinematic_dark",
   "crimson_noir",
@@ -79,6 +81,12 @@ const upload = multer({
     if (file.fieldname === "srt_file") {
       if (!ALLOWED_SRT_EXTS.has(ext)) {
         return cb(new Error("Unsupported SRT format. Use .srt or .txt."));
+      }
+      return cb(null, true);
+    }
+    if (file.fieldname === "scene_plan_file") {
+      if (!ALLOWED_PLAN_EXTS.has(ext)) {
+        return cb(new Error("Unsupported Scene Plan format. Use .json."));
       }
       return cb(null, true);
     }
@@ -181,12 +189,14 @@ app.post(
   jobCreateRateLimiter,
   upload.fields([
     { name: "audio", maxCount: 1 },
-    { name: "srt_file", maxCount: 1 }
+    { name: "srt_file", maxCount: 1 },
+    { name: "scene_plan_file", maxCount: 1 }
   ]),
   async (req, res) => {
     const audioFile = req.files?.audio?.[0];
     const srtFile = req.files?.srt_file?.[0];
-    const tempFiles = [audioFile?.path, srtFile?.path].filter(Boolean);
+    const scenePlanFile = req.files?.scene_plan_file?.[0];
+    const tempFiles = [audioFile?.path, srtFile?.path, scenePlanFile?.path].filter(Boolean);
 
     try {
       if (!audioFile) {
@@ -194,6 +204,9 @@ app.post(
       }
       if (srtFile && srtFile.size > MAX_SRT_BYTES) {
         return res.status(400).json({ error: "SRT ফাইলের সাইজ সর্বোচ্চ ২ MB হতে হবে।" });
+      }
+      if (scenePlanFile && scenePlanFile.size > MAX_SCENE_PLAN_BYTES) {
+        return res.status(400).json({ error: "Scene Plan JSON ফাইলের সাইজ সর্বোচ্চ ৫ MB হতে হবে।" });
       }
 
       ensureGithubConfig();
@@ -218,6 +231,31 @@ app.post(
         }
       }
 
+      const scenePlanTextRaw = String(req.body?.scene_plan_text || "").trim().slice(0, 1000000);
+      let customScenePlanBuffer = null;
+      let rawPlanStr = "";
+      if (scenePlanTextRaw) {
+        rawPlanStr = scenePlanTextRaw;
+      } else if (scenePlanFile && fs.existsSync(scenePlanFile.path)) {
+        rawPlanStr = fs.readFileSync(scenePlanFile.path, "utf8").trim();
+      }
+      if (rawPlanStr) {
+        const cleanedPlan = rawPlanStr.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
+        let parsedPlan;
+        try {
+          parsedPlan = JSON.parse(cleanedPlan);
+        } catch (_e) {
+          return res.status(400).json({ error: "Scene Plan JSON ফরম্যাট সঠিক নয়। বৈধ JSON ফাইল দিন।" });
+        }
+        if (Array.isArray(parsedPlan)) {
+          parsedPlan = { scenes: parsedPlan };
+        }
+        if (!parsedPlan || !Array.isArray(parsedPlan.scenes) || parsedPlan.scenes.length === 0) {
+          return res.status(400).json({ error: "Scene Plan JSON-এ কমপক্ষে একটি দৃশ্যসহ 'scenes' অ্যারে থাকতে হবে।" });
+        }
+        customScenePlanBuffer = Buffer.from(JSON.stringify(parsedPlan, null, 2), "utf8");
+      }
+
       const relRes = await ghRequest("/releases", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -230,6 +268,7 @@ app.post(
             title: docTitle,
             video_theme: videoTheme,
             has_custom_srt: Boolean(customSrtBuffer),
+            has_custom_scene_plan: Boolean(customScenePlanBuffer),
             created_at: new Date().toISOString()
           }),
           draft: false,
@@ -263,15 +302,28 @@ app.post(
         );
       }
 
+      if (customScenePlanBuffer && customScenePlanBuffer.length > 0) {
+        await uploadReleaseAsset(
+          release,
+          "custom_scene_plan.json",
+          "application/json; charset=utf-8",
+          customScenePlanBuffer,
+          customScenePlanBuffer.length
+        );
+      }
+
       const initialStatus = {
         job_id: jobId,
         title: docTitle,
         video_theme: videoTheme,
         has_custom_srt: Boolean(customSrtBuffer),
+        has_custom_scene_plan: Boolean(customScenePlanBuffer),
         stage_key: "uploading_audio",
         stage: "Uploading Audio",
         percent: 5,
-        message: customSrtBuffer
+        message: customScenePlanBuffer
+          ? "অডিও ও কাস্টম Scene Plan আপলোড সম্পন্ন হয়েছে। রেন্ডার ওয়ার্কার চালু হচ্ছে..."
+          : customSrtBuffer
           ? "অডিও ও কাস্টম SRT আপলোড সম্পন্ন হয়েছে। AI ওয়ার্কার চালু হচ্ছে..."
           : "অডিও আপলোড সম্পন্ন হয়েছে। AI ওয়ার্কার চালু হচ্ছে...",
         error: null,
@@ -291,7 +343,8 @@ app.post(
             subtitles,
             bg_music: bgMusic,
             video_theme: videoTheme,
-            has_custom_srt: customSrtBuffer ? "true" : "false"
+            has_custom_srt: customSrtBuffer ? "true" : "false",
+            has_custom_scene_plan: customScenePlanBuffer ? "true" : "false"
           }
         })
       });
@@ -406,6 +459,7 @@ app.get("/api/jobs/:jobId/asset/:assetName", requirePin, async (req, res) => {
       "transcript.json",
       "subtitles.srt",
       "quality_report.json",
+      "storyboard.html",
       "status.json"
     ]);
     if (!allowed.has(assetName)) {
@@ -443,6 +497,8 @@ app.get("/api/jobs/:jobId/asset/:assetName", requirePin, async (req, res) => {
 
     const contentType = assetName.endsWith(".mp4")
       ? "video/mp4"
+      : assetName.endsWith(".html")
+      ? "text/html; charset=utf-8"
       : assetName.endsWith(".json")
       ? "application/json; charset=utf-8"
       : "text/plain; charset=utf-8";
