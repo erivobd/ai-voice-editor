@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#070205">
-  <title>AI Documentary Studio v5.0</title>
+  <title>AI Documentary Studio v5.5</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@400;500;600;700&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
@@ -56,6 +56,14 @@
         <input id="srt-file-input" type="file" accept=".srt,.txt">
         <textarea id="srt-text-input" rows="5" maxlength="250000" placeholder="ঐচ্ছিক: এখানে SRT বা টাইমস্ট্যাম্পড বাংলা স্ক্রিপ্ট কপি করে পেস্ট করুন..."></textarea>
         <small id="srt-mode-badge" class="srt-badge">মোড: Whisper অটো-ট্রান্সক্রিপশন (বাংলা)</small>
+      </div>
+
+      <div class="srt-box-wrap">
+        <span class="field-label">কাস্টম Scene Plan ফাইল বা JSON (ঐচ্ছিক — Gemini অ্যাপ থেকে তৈরি)</span>
+        <small class="muted">নিজের তৈরি scene_plan.json আপলোড বা পেস্ট করলে GitHub-এ কোনো AI ডিরেক্টর API কল ছাড়াই সরাসরি ভিডিও রেন্ডার হবে।</small>
+        <input id="plan-file-input" type="file" accept=".json,.txt">
+        <textarea id="plan-text-input" rows="4" maxlength="1000000" placeholder="ঐচ্ছিক: এখানে Gemini থেকে পাওয়া scene_plan.json পেস্ট করুন..."></textarea>
+        <small id="plan-mode-badge" class="srt-badge">মোড: অটোমেটিক AI Director (Gemini/Groq/OpenRouter)</small>
       </div>
 
       <div class="theme-picker-wrap">
@@ -168,6 +176,7 @@
       <a id="dl-transcript">📝 Transcript (JSON)</a>
       <a id="dl-srt">💬 Subtitles (SRT)</a>
       <a id="dl-qc">🛡️ Quality Report (JSON)</a>
+      <a id="dl-storyboard">🎞️ Storyboard (HTML)</a>
     </div>
 
     <button id="btn-result-new-job" class="ghost full-width">নতুন ডকুমেন্টারি তৈরি করুন</button>

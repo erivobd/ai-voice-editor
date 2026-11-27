@@ -60,6 +60,23 @@
   $("srt-file-input")?.addEventListener("change", refreshSrtBadge);
   $("srt-text-input")?.addEventListener("input", refreshSrtBadge);
 
+  function refreshPlanBadge() {
+    const badge = $("plan-mode-badge");
+    if (!badge) return;
+    const textVal = ($("plan-text-input")?.value || "").trim();
+    const fileVal = $("plan-file-input")?.files?.[0];
+    if (textVal) {
+      badge.textContent = "মোড: কাস্টম Scene Plan JSON পেস্ট করা হয়েছে (AI API স্কিপ হবে)";
+    } else if (fileVal) {
+      badge.textContent = `মোড: কাস্টম Scene Plan (${fileVal.name}) ব্যবহৃত হবে (AI API স্কিপ হবে)`;
+    } else {
+      badge.textContent = "মোড: অটোমেটিক AI Director (Gemini/Groq/OpenRouter)";
+    }
+  }
+
+  $("plan-file-input")?.addEventListener("change", refreshPlanBadge);
+  $("plan-text-input")?.addEventListener("input", refreshPlanBadge);
+
   function showOnly(cardId) {
     ["pin-card", "upload-card", "history-card", "status-card", "result-card"].forEach((id) => {
       $(id).classList.toggle("hidden", id !== cardId);
@@ -194,6 +211,14 @@
       formData.append("srt_file", srtFileVal);
     }
 
+    const planTextVal = ($("plan-text-input")?.value || "").trim();
+    const planFileVal = $("plan-file-input")?.files?.[0];
+    if (planTextVal) {
+      formData.append("scene_plan_text", planTextVal);
+    } else if (planFileVal) {
+      formData.append("scene_plan_file", planFileVal);
+    }
+
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/jobs");
     if (accessPin) xhr.setRequestHeader("X-Access-Pin", accessPin);
@@ -314,6 +339,7 @@
     await bindProtectedDownload($("dl-transcript"), currentJobId, "transcript.json", `${currentJobId}_transcript.json`);
     await bindProtectedDownload($("dl-srt"), currentJobId, "subtitles.srt", `${currentJobId}_subtitles.srt`);
     await bindProtectedDownload($("dl-qc"), currentJobId, "quality_report.json", `${currentJobId}_quality_report.json`);
+    if ($("dl-storyboard")) await bindProtectedDownload($("dl-storyboard"), currentJobId, "storyboard.html", `${currentJobId}_storyboard.html`);
 
     showOnly("result-card");
   }
@@ -327,6 +353,9 @@
     if ($("srt-file-input")) $("srt-file-input").value = "";
     if ($("srt-text-input")) $("srt-text-input").value = "";
     refreshSrtBadge();
+    if ($("plan-file-input")) $("plan-file-input").value = "";
+    if ($("plan-text-input")) $("plan-text-input").value = "";
+    refreshPlanBadge();
     showOnly("upload-card");
   }
 
