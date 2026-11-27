@@ -148,6 +148,17 @@ def download_custom_srt():
     return None
 
 
+def download_custom_scene_plan():
+    WORK.mkdir(parents=True, exist_ok=True)
+    local_plan = WORK / "custom_scene_plan.json"
+    if local_plan.exists() and local_plan.stat().st_size > 0:
+        return local_plan
+    downloaded = _download_asset_by_name("custom_scene_plan.json", local_plan)
+    if downloaded and downloaded.exists() and downloaded.stat().st_size > 0:
+        return downloaded
+    return None
+
+
 def download_original_audio():
     WORK.mkdir(parents=True, exist_ok=True)
     existing = sorted(WORK.glob("original_audio.*"))

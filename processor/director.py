@@ -94,7 +94,7 @@ def _normalize_media_preference(raw_pref: Any, raw_vtype: Any, visual_effect: st
     if visual_effect == "archival_photo":
         return "photo"
     # Naturally weave ~25% Ken Burns documentary photos into stock scenes when not specified.
-    return "photo" if idx % 4 == 2 else "video"
+    return "photo" if idx % 3 == 1 else "video"
 
 
 def _normalize_visual_effect(raw_fx: Any, text: str, story_beat: str) -> str:
@@ -136,6 +136,15 @@ def _clean_bn(text: str) -> str:
     s = re.sub(r"^\s*অধ্যায়\s*[\d০-৯]+\s*(?://|[-–—:])?\s*", "", s, flags=re.IGNORECASE)
     s = re.sub(r"\s+", " ", s).strip()
     return s
+
+
+def _truncate_bn_words(text: str, max_chars: int = 58) -> str:
+    """Truncate Bengali text cleanly at a word boundary without cutting a word in half."""
+    s = _clean_bn(text)
+    if len(s) <= max_chars:
+        return s
+    cut = s[:max_chars].rsplit(" ", 1)[0].strip(" ,;:-–—")
+    return cut if cut else s[:max_chars]
 
 
 def _extract_bengali_keywords(text: str, requested: Any = None) -> List[str]:
@@ -433,10 +442,10 @@ def _normalize_graphic(sc: Dict[str, Any], idx: int, transcript_text: str = "", 
         kind = "stat_chart" if ov_style == "stat_bars" else ["title_card", "stat_chart", "timeline", "map_marker"][idx % 4]
 
     raw_heading = g.get("heading") or sc.get("overlay_headline") or derived["heading"]
-    heading = _clean_bn(raw_heading)[:30] or derived["heading"]
+    heading = _truncate_bn_words(raw_heading, 58) or derived["heading"]
 
     raw_sub = g.get("subheading") or sc.get("overlay_subtext") or ""
-    subheading = _clean_bn(raw_sub)[:46]
+    subheading = _truncate_bn_words(raw_sub, 64)
 
     items_raw = g.get("items") or sc.get("stat_items") or derived["items"]
     items: List[str] = []
@@ -447,7 +456,7 @@ def _normalize_graphic(sc: Dict[str, Any], idx: int, transcript_text: str = "", 
             if k_clean and v_clean:
                 items.append(f"{k_clean}: {v_clean}")
         else:
-            c = _clean_bn(it)[:24]
+            c = _truncate_bn_words(it, 34)
             if c and c not in items:
                 items.append(c)
 
@@ -469,7 +478,7 @@ def _find_segment_text_for_range(segments: List[Dict[str, Any]], start: float, e
     for s in segments:
         s_start = float(s.get("start", 0.0))
         s_end = float(s.get("end", s_start))
-        if max(start, s_start) < min(end, s_end) + 0.05:
+        if min(end, s_end) - max(start, s_start) > 0.05:
             txt = str(s.get("text") or "").strip()
             if txt:
                 matched.append(txt)
@@ -1031,3 +1040,64 @@ def create_scene_plan(
 
     total_duration = max(audio_duration or 0.0, max_seg_end, 4.0)
     return plan_scenes(transcript_text, total_duration, title=doc_title, segments=segments)
+
+
+def load_custom_scene_plan(
+    plan_path: Any,
+    transcript_data: Dict[str, Any],
+    title: str = "",
+) -> Dict[str, Any]:
+    """Load, validate, and normalize a user-supplied custom scene_plan.json (skipping LLM API calls)."""
+    from pathlib import Path
+
+    raw_text = Path(plan_path).read_text(encoding="utf-8", errors="replace").strip()
+    if not raw_text:
+        raise RuntimeError("আপলোড করা Custom Scene Plan (.json) ফাইলটি খালি।")
+
+    try:
+        parsed = _extract_json(raw_text)
+    except Exception as exc:
+        raise RuntimeError(f"Custom Scene Plan JSON সঠিকভাবে পার্স করা যায়নি: {exc}") from exc
+
+    if isinstance(parsed, list):
+        parsed = {"scenes": parsed}
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("scenes"), list) or not parsed["scenes"]:
+        raise RuntimeError("Custom Scene Plan JSON-এ কমপক্ষে একটি দৃশ্যসহ 'scenes' তালিকা থাকতে হবে।")
+
+    segments = transcript_data.get("segments") or []
+    total_duration = max(
+        float(transcript_data.get("duration") or 0.0),
+        max((float(s.get("end", 0.0)) for s in segments), default=0.0),
+        4.0,
+    )
+    fallback_full = str(transcript_data.get("full_text") or transcript_data.get("text") or "")
+    doc_title = title or str(parsed.get("title") or "").strip() or os.environ.get("DOC_TITLE", "").strip() or "Documentary"
+
+    scenes = _enforce_variety_and_pacing(
+        parsed["scenes"],
+        total_duration,
+        segments=segments,
+        fallback_full=fallback_full,
+        title=doc_title,
+    )
+    if not scenes:
+        raise RuntimeError("Custom Scene Plan থেকে কোনো বৈধ দৃশ্য পাওয়া যায়নি।")
+
+    color_grade = parsed.get("color_grade") if parsed.get("color_grade") in VALID_GRADES else "cinematic_teal"
+    mood = str(parsed.get("mood") or "documentary_ambient").strip()[:60] or "documentary_ambient"
+
+    update_status(
+        "creating_scene_plan",
+        f"কাস্টম Scene Plan থেকে {len(scenes)}টি দৃশ্য লোড সম্পন্ন হয়েছে (AI API স্কিপ হয়েছে)।",
+        percent=50,
+    )
+    return {
+        "title": doc_title,
+        "color_grade": color_grade,
+        "mood": mood,
+        "scene_count": len(scenes),
+        "ai_provider": "custom_scene_plan",
+        "planning_mode": "custom_scene_plan",
+        "total_duration": round(float(total_duration), 2),
+        "scenes": scenes,
+    }

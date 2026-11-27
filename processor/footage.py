@@ -304,8 +304,26 @@ def _find_video_asset(queries, pexels_key, pixabay_key, used_ids):
     return None, None, None
 
 
-def _find_photo_asset(queries, pexels_key, pixabay_key, used_ids):
+def _expand_queries_with_short_fallbacks(queries):
+    expanded = []
+    seen = set()
     for q in queries:
+        clean = str(q or "").strip()
+        if clean and clean.lower() not in seen:
+            expanded.append(clean)
+            seen.add(clean.lower())
+    for q in list(expanded):
+        words = [w for w in q.split() if len(w) >= 3]
+        if len(words) > 2:
+            short_q = " ".join(words[:2])
+            if short_q.lower() not in seen:
+                expanded.append(short_q)
+                seen.add(short_q.lower())
+    return expanded
+
+
+def _find_photo_asset(queries, pexels_key, pixabay_key, used_ids):
+    for q in _expand_queries_with_short_fallbacks(queries):
         found_id, found_url = _search_pexels_photo(q, pexels_key, used_ids)
         if found_url:
             return "photo", found_id, found_url

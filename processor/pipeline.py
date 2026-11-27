@@ -5,9 +5,14 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from status import update_status, fail_job, upload_asset_to_release
+from status import (
+    update_status,
+    fail_job,
+    upload_asset_to_release,
+    download_custom_scene_plan,
+)
 from transcribe import run_transcription
-from director import create_scene_plan
+from director import create_scene_plan, load_custom_scene_plan
 from footage import collect_stock_footage
 from remotion_render import render_remotion_documentary
 from quality_control import validate_final_video, generate_storyboard
@@ -25,13 +30,29 @@ def main():
         upload_asset_to_release(WORK / "transcript.json", "transcript.json", "application/json")
 
         current_stage = "creating_scene_plan"
-        scene_plan = create_scene_plan(transcript_data)
+        custom_plan_path = download_custom_scene_plan()
+        if custom_plan_path and custom_plan_path.exists():
+            update_status(
+                "creating_scene_plan",
+                "কাস্টম Scene Plan (.json) শনাক্ত হয়েছে — AI ডিরেক্টর API স্কিপ করে সরাসরি প্ল্যান লোড হচ্ছে...",
+                percent=44,
+            )
+            scene_plan = load_custom_scene_plan(
+                custom_plan_path,
+                transcript_data,
+                title=os.environ.get("DOC_TITLE", "").strip(),
+            )
+        else:
+            scene_plan = create_scene_plan(transcript_data)
 
         current_stage = "collecting_footage"
         scene_plan = collect_stock_footage(scene_plan)
 
         current_stage = "creating_graphics"
         update_status("creating_graphics", "Remotion-এর জন্য প্রিসেট, কারাওকে ও মোশন গ্রাফিক্স প্রস্তুত হচ্ছে...", percent=70)
+        (WORK / "scene_plan.json").write_text(
+            json.dumps(scene_plan, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
         upload_asset_to_release(WORK / "scene_plan.json", "scene_plan.json", "application/json")
 
         current_stage = "rendering_final_video"
