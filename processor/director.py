@@ -19,6 +19,55 @@ OPENROUTER_MODELS = ["openrouter/free"]
 VALID_GRADES = {"cinematic_teal", "warm_history", "cool_science", "neutral_doc"}
 VALID_GRAPHIC_KINDS = {"title_card", "stat_chart", "timeline", "map_marker"}
 
+VALID_STORY_BEATS = {"hook", "setup", "rising", "climax", "consequence", "lesson", "cta"}
+VALID_CAMERA_PRESETS = {
+    "CAM-PUSH", "CAM-PULL", "CAM-PAN-L", "CAM-PAN-R",
+    "CAM-DRIFT", "CAM-PUNCH", "CAM-SHAKE",
+}
+VALID_TEXT_PRESETS = {
+    "HDR-DROP", "TAG-WIPE", "NUM-ROLL", "QUOTE-STAGGER",
+    "BIG-STAMP", "CTA-STAGGER",
+}
+VALID_TRANSITIONS = {
+    "TR-CUT", "TR-DISSOLVE", "TR-FADEBLACK", "TR-WHIP",
+    "TR-WIPE", "TR-ZOOMTHRU", "TR-FLASH",
+}
+VALID_MUSIC_MODES = {"normal", "duck", "mute"}
+VALID_MEDIA_PREFERENCES = {"video", "photo"}
+VALID_VISUAL_EFFECTS = {
+    "none",
+    "old_footage",
+    "archival_photo",
+    "vhs_retro",
+    "noir_bw",
+    "cctv_cam",
+    "dream_glow",
+    "glitch_pulse",
+}
+
+MOTION_TO_CAMERA = {
+    "slow_zoom_in": "CAM-PUSH",
+    "slow_zoom_out": "CAM-PULL",
+    "pan_left": "CAM-PAN-L",
+    "pan_right": "CAM-PAN-R",
+}
+CAMERA_TO_MOTION = {
+    "CAM-PUSH": "slow_zoom_in",
+    "CAM-PULL": "slow_zoom_out",
+    "CAM-PAN-L": "pan_left",
+    "CAM-PAN-R": "pan_right",
+    "CAM-DRIFT": "slow_zoom_in",
+    "CAM-PUNCH": "slow_zoom_in",
+    "CAM-SHAKE": "slow_zoom_in",
+}
+
+BENGALI_STOPWORDS = {
+    "এবং", "কিন্তু", "তবে", "যদি", "তাহলে", "কারণ", "যে", "যা", "এই", "সেই",
+    "একটি", "একটা", "করে", "করা", "হয়", "হয়", "হয়েছে", "হয়েছে", "ছিল", "ছিলেন",
+    "আছে", "নেই", "থেকে", "দিয়ে", "দিয়ে", "জন্য", "সাথে", "মধ্যে", "ওপর", "উপর",
+    "আমরা", "আপনি", "তারা", "তিনি", "এটা", "সেটা", "কোনো", "কিছু", "সব", "আর",
+}
+
 
 def _scene_grade_for_text(text: str, requested: str = "") -> str:
     """Choose a restrained scene-specific grade from the spoken topic."""
@@ -32,6 +81,42 @@ def _scene_grade_for_text(text: str, requested: str = "") -> str:
     if any(k in t for k in ("অর্থনীতি", "বাণিজ্য", "শিল্প", "রাজনীতি", "সরকার", "নির্বাচন", "চীন", "বাংলাদেশ")):
         return "cinematic_teal"
     return "neutral_doc"
+
+
+def _normalize_media_preference(raw_pref: Any, raw_vtype: Any, visual_effect: str, idx: int) -> str:
+    """Choose whether a stock scene should prefer video footage or a Ken Burns photo."""
+    pref = str(raw_pref or "").strip().lower()
+    if pref in VALID_MEDIA_PREFERENCES:
+        return pref
+    vt = str(raw_vtype or "").strip().lower()
+    if vt in ("stock_photo", "photo", "image", "picture"):
+        return "photo"
+    if visual_effect == "archival_photo":
+        return "photo"
+    # Naturally weave ~25% Ken Burns documentary photos into stock scenes when not specified.
+    return "photo" if idx % 4 == 2 else "video"
+
+
+def _normalize_visual_effect(raw_fx: Any, text: str, story_beat: str) -> str:
+    """Validate visual_effect or infer a restrained documentary effect from Bengali context."""
+    fx = str(raw_fx or "").strip().lower()
+    if fx in VALID_VISUAL_EFFECTS:
+        return fx
+    t = (text or "").lower()
+    if any(k in t for k in ("প্রাচীন", "ইতিহাস", "১৯৭১", "১৯৪৭", "শতাব্দী", "যুদ্ধ", "পুরনো", "অতীত", "ঐতিহাসিক")):
+        return "old_footage"
+    if any(k in t for k in ("সিসিটিভি", "ক্যামেরা", "নজরদারি", "তদন্ত", "গোয়েন্দা", "গোয়েন্দা")):
+        return "cctv_cam"
+    if any(k in t for k in ("অপরাধ", "খুন", "মৃত্যু", "রহস্য", "ষড়যন্ত্র", "ষড়যন্ত্র", "অন্ধকার")):
+        return "noir_bw"
+    if any(k in t for k in ("আশির দশক", "নব্বইয়ের দশক", "নব্বইয়ের দশক", "ভিএইচএস", "ক্যাসেট", "টেলিভিশন")):
+        return "vhs_retro"
+    if any(k in t for k in ("স্বপ্ন", "স্মৃতি", "কল্পনা", "আশা")):
+        return "dream_glow"
+    if any(k in t for k in ("হ্যাক", "সাইবার", "ভাইরাস", "গ্লিচ")):
+        return "glitch_pulse"
+    return "none"
+
 
 BENGALI_VISUAL_LEXICON = [
     (["রাতের আকাশ", "অসংখ্য তারা", "নক্ষত্র", "আকাশের দিকে", "তারা দেখতে"], "রাতের আকাশের তারা", ["অসংখ্য নক্ষত্র", "অসীম মহাকাশ"], "night sky full of stars milky way timelapse"),
@@ -51,6 +136,103 @@ def _clean_bn(text: str) -> str:
     s = re.sub(r"^\s*অধ্যায়\s*[\d০-৯]+\s*(?://|[-–—:])?\s*", "", s, flags=re.IGNORECASE)
     s = re.sub(r"\s+", " ", s).strip()
     return s
+
+
+def _extract_bengali_keywords(text: str, requested: Any = None) -> List[str]:
+    """Return 1-2 clean Bengali highlight keywords for SUB-KARAOKE."""
+    keywords: List[str] = []
+    if isinstance(requested, str):
+        requested = [requested]
+    if isinstance(requested, list):
+        for item in requested:
+            kw = _clean_bn(item).strip(" ,।.!?;:\"'()[]{}")
+            if kw and len(kw) >= 2 and kw not in keywords:
+                keywords.append(kw)
+            if len(keywords) >= 2:
+                return keywords
+
+    tokens = re.findall(r"[\u0980-\u09FF0-9০-৯%]+", str(text or ""))
+    candidates = [t for t in tokens if len(t) >= 3 and t not in BENGALI_STOPWORDS]
+    candidates.sort(key=lambda w: (1 if re.search(r"[0-9০-৯]", w) else 0, len(w)), reverse=True)
+    for cand in candidates:
+        if cand not in keywords:
+            keywords.append(cand)
+        if len(keywords) >= 2:
+            break
+    return keywords
+
+
+def _normalize_camera_preset(raw_preset: Any, motion_effect: str, idx: int) -> str:
+    raw = str(raw_preset or "").strip().upper()
+    if "(" in raw:
+        raw = raw.split("(", 1)[0].strip()
+    if raw in VALID_CAMERA_PRESETS:
+        return raw
+    if motion_effect in MOTION_TO_CAMERA:
+        return MOTION_TO_CAMERA[motion_effect]
+    cycle = ["CAM-PUSH", "CAM-PAN-L", "CAM-PULL", "CAM-PAN-R", "CAM-DRIFT"]
+    return cycle[idx % len(cycle)]
+
+
+def _normalize_text_preset(raw_preset: Any, graphic_kind: str, story_beat: str, text: str) -> str:
+    raw = str(raw_preset or "").strip().upper()
+    if "(" in raw:
+        raw = raw.split("(", 1)[0].strip()
+    if raw in VALID_TEXT_PRESETS:
+        return raw
+    if story_beat == "cta":
+        return "CTA-STAGGER"
+    if graphic_kind == "stat_chart" or re.search(r"[0-9০-৯]{2,}", text or ""):
+        return "NUM-ROLL"
+    if graphic_kind == "timeline":
+        return "TAG-WIPE"
+    if story_beat == "climax":
+        return "BIG-STAMP"
+    return "HDR-DROP"
+
+
+def _normalize_transition(raw_tr: Any, story_beat: str, idx: int) -> str:
+    raw = str(raw_tr or "").strip().upper()
+    if "(" in raw:
+        raw = raw.split("(", 1)[0].strip()
+    if raw in VALID_TRANSITIONS:
+        return raw
+    if idx == 0:
+        return "TR-CUT"
+    if story_beat in ("climax", "hook"):
+        return "TR-CUT"
+    if story_beat in ("consequence", "lesson"):
+        return "TR-FADEBLACK"
+    return "TR-DISSOLVE" if idx % 3 == 0 else "TR-CUT"
+
+
+def _normalize_story_beat(raw_beat: Any, start: float, total_duration: float) -> str:
+    raw = str(raw_beat or "").strip().lower()
+    if raw in VALID_STORY_BEATS:
+        return raw
+    ratio = start / max(total_duration, 1.0)
+    if ratio < 0.08:
+        return "hook"
+    if ratio < 0.25:
+        return "setup"
+    if ratio < 0.60:
+        return "rising"
+    if ratio < 0.78:
+        return "climax"
+    if ratio < 0.90:
+        return "consequence"
+    if ratio < 0.96:
+        return "lesson"
+    return "cta"
+
+
+def _normalize_music_mode(raw_mode: Any, story_beat: str) -> str:
+    raw = str(raw_mode or "").strip().lower()
+    if raw in VALID_MUSIC_MODES:
+        return raw
+    if story_beat == "climax":
+        return "duck"
+    return "normal"
 
 
 def _extract_json(text: str) -> Dict[str, Any]:
@@ -76,41 +258,46 @@ def _build_prompt(
 ) -> str:
     window_end = float(total_duration if window_end is None else window_end)
     window_start = max(0.0, float(window_start))
-    window_duration = max(0.0, window_end - window_start)
     title_hint = f"Documentary Title: {title}\n" if title else ""
     return f"""
-You are an elite documentary video director.
-{title_hint}Create a tightly synchronized scene plan for the narration window from {window_start:.1f}s to {window_end:.1f}s. The complete documentary duration is {total_duration:.1f}s.
+You are an elite 16:9 YouTube documentary director and motion-design planner.
+{title_hint}Create a tightly synchronized 16:9 landscape scene plan for the narration window from {window_start:.1f}s to {window_end:.1f}s. The complete documentary duration is {total_duration:.1f}s.
 
 TRANSCRIPT FOR THIS WINDOW (use every timestamped line; do not invent events):
 {transcript_text}
 
-STRICT VISUAL & TIMING RULES:
+STRICT VISUAL, STORY & TIMING RULES:
 1. COVER THIS WINDOW COMPLETELY:
    - Cover the absolute timeline from {window_start:.1f}s through {window_end:.1f}s with no intentional gaps.
    - Scene start/end values are ABSOLUTE timestamps on the original narration timeline, not offsets from this window.
    - Never retime, compress, stretch, or evenly redistribute timestamps.
-   - Place each visual change where its spoken subject begins, using timestamped transcript lines as authority.
+   - Cut at sentence boundaries or natural pauses, never mid-word.
 2. STRICT VISUAL-TRANSCRIPT LOCK:
    - Every scene's search_queries and graphic MUST directly match the exact spoken subject, noun, place, or concept at that timestamp.
    - Example: If the narrator says "রাতের আকাশের দিকে তাকালে আমরা অসংখ্য তারা দেখতে পাই", the query MUST be "night sky full of stars milky way" — NEVER ocean, whirlpool, or unrelated nature.
    - NEVER use generic engineering blueprints, circuit boards, or unrelated stock unless the transcript explicitly discusses engineering or code.
-3. COHESIVE SCENE DURATION:
+3. COHESIVE SCENE DURATION & ONE FOCUS PER FRAME:
    - Keep each scene 3.5s to 7.0s. Only use one scene if this window is shorter than 6.5s.
    - Only split into rapid cuts (1.8s–2.8s) if the narrator explicitly enumerates 3+ separate objects in a list.
+   - ONE focus per frame: do not overcrowd a shot with competing cards, charts, and badges at the same time.
 4. NEVER repeat the exact same search query across scenes. Provide 2 specific English visual queries per stock_footage scene.
-5. MODERN YOUTUBE DOCUMENTARY EDITING:
-   - Stock footage is the MAIN visual layer. Aim for about 75-85% relevant footage and 15-25% purposeful explainer graphics, not alternating slides.
-   - Never force a graphic just because two footage scenes appeared. Use full-screen motion_graphic only for a real explanation: a location, timeline, process, comparison, or meaningful statistic.
-   - Use editorial overlays on footage sparingly (roughly one in every 3-4 scenes). Do not put a title, badges, or pills on every shot.
-   - Prefer visual variety: wide establishing shots, close details, aerials, archival-style images, maps, and short punch-in shots that match the narration.
+5. MIX VIDEO FOOTAGE + DOCUMENTARY PHOTOS + EXPLAINER GRAPHICS:
+   - Aim for roughly 55-65% live stock video (`media_preference: "video"`), 20-25% high-resolution Ken Burns photos (`media_preference: "photo"`, great for history, landmarks, portraits, documents, space, close details), and 15-20% purposeful `motion_graphic` explainers.
+   - Keep `visual_type` as either `"stock_footage"` (for both video and photo stock scenes) or `"motion_graphic"`.
+   - Use editorial overlays on footage sparingly (roughly one in every 3-4 scenes).
 6. BENGALI ONLY FOR ON-SCREEN WORDS:
    - Keep on-screen wording concise and factual. Do not invent statistics, dates, locations, or claims absent from the transcript.
-   - Use a heading and 1-3 supporting labels only when they add explanatory value.
    - NEVER write the word "অধ্যায়" or chapter numbers anywhere. Zero Hindi/Devanagari characters.
-7. Choose a documentary color grade: cinematic_teal, warm_history, cool_science, or neutral_doc.
-8. Choose subtle camera movement: slow_zoom_in, slow_zoom_out, pan_left, or pan_right.
-9. Use clean editorial cuts by default; reserve transitions and graphic emphasis for story beats.
+   - Provide 1-2 exact Bengali highlight `keywords` per scene from the spoken line for SUB-KARAOKE emphasis.
+7. PRESET & VISUAL EFFECT LIBRARY (choose exact keys only):
+   - `story_beat`: hook | setup | rising | climax | consequence | lesson | cta
+   - `media_preference`: video | photo
+   - `visual_effect`: none (default clean modern look) | old_footage (aged film scratches, sepia & flicker for past/historical eras) | archival_photo (museum photo matte & warm dust for historical stills) | vhs_retro (80s/90s scanlines & tape look) | noir_bw (high-contrast B&W for mystery/crime/tragedy) | cctv_cam (surveillance/investigation feed look) | dream_glow (soft memory/wonder light leak) | glitch_pulse (brief cyber/tech/shock glitch). Use effects ONLY when the spoken story genuinely calls for them!
+   - `camera_preset`: CAM-PUSH | CAM-PULL | CAM-PAN-L | CAM-PAN-R | CAM-DRIFT | CAM-PUNCH | CAM-SHAKE (max 2-3 per video)
+   - `text_preset`: HDR-DROP | TAG-WIPE | NUM-ROLL | QUOTE-STAGGER | BIG-STAMP | CTA-STAGGER
+   - `transition`: TR-CUT | TR-DISSOLVE | TR-FADEBLACK | TR-WHIP | TR-WIPE | TR-ZOOMTHRU | TR-FLASH (max 2-3 per video)
+   - `music_mode`: normal | duck | mute (use `mute` only on a dramatic silence/twist moment)
+   - `color_grade`: cinematic_teal | warm_history | cool_science | neutral_doc
 
 Return ONLY valid JSON with this schema:
 {{
@@ -121,12 +308,22 @@ Return ONLY valid JSON with this schema:
       "scene_id": 1,
       "start": {window_start:.1f},
       "end": {min(window_start + 5.5, window_end):.1f},
+      "story_beat": "hook",
       "visual_type": "stock_footage",
+      "media_preference": "video",
+      "visual_effect": "none",
       "rapid_cut": false,
       "search_queries": ["night sky full of stars milky way", "starry night sky cosmos timelapse"],
       "motion_effect": "slow_zoom_in",
+      "camera_preset": "CAM-PUSH",
+      "text_preset": "HDR-DROP",
+      "transition": "TR-CUT",
+      "transition_duration": 0.35,
+      "music_mode": "normal",
+      "keywords": ["আকাশের", "তারা"],
       "color_grade": "cool_science",
       "accent": "red",
+      "show_overlay": false,
       "graphic": {{
         "kind": "title_card",
         "heading": "রাতের আকাশের তারা",
@@ -279,6 +476,23 @@ def _find_segment_text_for_range(segments: List[Dict[str, Any]], start: float, e
     return " ".join(matched) if matched else fallback_full
 
 
+def _apply_shock_effect_cap(scenes: List[Dict[str, Any]], max_total: int = 3) -> None:
+    """Enforce default_prompt_1 restraint: CAM-SHAKE + TR-FLASH combined <= max_total."""
+    used = 0
+    for sc in scenes:
+        if sc.get("camera_preset") == "CAM-SHAKE":
+            if used >= max_total:
+                sc["camera_preset"] = "CAM-PUNCH"
+                sc["motion_effect"] = CAMERA_TO_MOTION["CAM-PUNCH"]
+            else:
+                used += 1
+        if sc.get("transition") == "TR-FLASH":
+            if used >= max_total:
+                sc["transition"] = "TR-CUT"
+            else:
+                used += 1
+
+
 def _enforce_variety_and_pacing(
     raw_scenes: List[Dict[str, Any]],
     total_duration: float,
@@ -312,24 +526,38 @@ def _enforce_variety_and_pacing(
             if qs and qs.lower() != derived["query"].lower():
                 queries.append(qs)
                 break
-        fallback_type = first_raw.get("visual_type", "motion_graphic") if first_raw else "motion_graphic"
-        if fallback_type not in ("stock_footage", "motion_graphic"):
-            fallback_type = "motion_graphic"
+        raw_vt = first_raw.get("visual_type", "motion_graphic") if first_raw else "motion_graphic"
+        fallback_type = "stock_footage" if raw_vt in ("stock_footage", "stock_photo", "photo", "image") else "motion_graphic"
         if fallback_type == "stock_footage" and not queries:
             queries = [derived["query"]]
         graphic = _normalize_graphic(first_raw, 0, transcript_text=fallback_full, title=title)
+        story_beat = _normalize_story_beat(first_raw.get("story_beat"), 0.0, total_duration)
+        cam_preset = _normalize_camera_preset(first_raw.get("camera_preset"), "slow_zoom_in", 0)
+        visual_effect = _normalize_visual_effect(first_raw.get("visual_effect"), fallback_full, story_beat)
+        media_pref = _normalize_media_preference(first_raw.get("media_preference"), raw_vt, visual_effect, 0)
         return [{
             "scene_id": 1,
             "start": 0.0,
             "end": round(total_duration, 2),
             "duration": round(total_duration, 2),
+            "story_beat": story_beat,
             "visual_type": fallback_type,
             "type": fallback_type,
+            "media_preference": media_pref,
+            "visual_effect": visual_effect,
             "rapid_cut": False,
             "search_queries": queries[:2],
             "search_query": queries[0] if queries else "",
             "accent": "red",
-            "motion_effect": "slow_zoom_in",
+            "motion_effect": CAMERA_TO_MOTION.get(cam_preset, "slow_zoom_in"),
+            "camera_preset": cam_preset,
+            "text_preset": _normalize_text_preset(first_raw.get("text_preset"), graphic["kind"], story_beat, fallback_full),
+            "transition": "TR-CUT",
+            "transition_duration": 0.35,
+            "music_mode": _normalize_music_mode(first_raw.get("music_mode"), story_beat),
+            "keywords": _extract_bengali_keywords(fallback_full, first_raw.get("keywords")),
+            "narration_text": fallback_full,
+            "color_grade": _scene_grade_for_text(fallback_full, str(first_raw.get("color_grade") or "")),
             "graphic": graphic,
             "show_overlay": bool(first_raw.get("show_overlay", False)),
             "overlay_headline": graphic["heading"],
@@ -361,10 +589,6 @@ def _enforce_variety_and_pacing(
                 },
             })
 
-    # Process scenes chronologically and honor absolute narration timestamps.
-    # Gaps are filled by extending the previous shot (or a generated opener),
-    # while overlaps are trimmed at the current cursor. Never move a later
-    # scene earlier just to make the timeline contiguous.
     raw_scenes = sorted(
         raw_scenes,
         key=lambda item: float(item.get("start", 0.0)) if isinstance(item, dict) else 0.0,
@@ -385,9 +609,6 @@ def _enforce_variety_and_pacing(
         orig_dur = float(sc.get("duration") or (orig_end - orig_start if orig_end > orig_start else 5.0))
         requested_start = min(total_duration, max(cursor, orig_start))
 
-        # Do not stretch one unrelated shot across a long transcript gap.
-        # Small gaps can hold the previous shot; larger gaps become concise,
-        # transcript-led motion graphics until the next timestamped scene.
         if requested_start > cursor + 0.20:
             gap_duration = requested_start - cursor
             if cleaned and gap_duration <= 7.5:
@@ -403,14 +624,28 @@ def _enforce_variety_and_pacing(
                         "kind": "title_card", "heading": gap_topic["heading"],
                         "subheading": "", "items": gap_topic["items"]
                     }
+                    gap_idx = len(cleaned)
+                    gap_beat = _normalize_story_beat(None, gap_cursor, total_duration)
+                    gap_motion = motions[gap_idx % len(motions)]
+                    gap_cam = _normalize_camera_preset(None, gap_motion, gap_idx)
                     cleaned.append({
-                        "scene_id": len(cleaned) + 1,
+                        "scene_id": gap_idx + 1,
                         "start": round(gap_cursor, 3), "end": round(gap_end, 3),
                         "duration": round(gap_end - gap_cursor, 3),
+                        "story_beat": gap_beat,
                         "visual_type": "motion_graphic", "type": "motion_graphic",
+                        "media_preference": "video",
+                        "visual_effect": "none",
                         "rapid_cut": False, "search_queries": [], "search_query": "",
-                        "accent": "red" if len(cleaned) % 2 == 0 else "gold",
-                        "motion_effect": motions[len(cleaned) % len(motions)],
+                        "accent": "red" if gap_idx % 2 == 0 else "gold",
+                        "motion_effect": gap_motion,
+                        "camera_preset": gap_cam,
+                        "text_preset": _normalize_text_preset(None, "title_card", gap_beat, gap_text),
+                        "transition": _normalize_transition(None, gap_beat, gap_idx),
+                        "transition_duration": 0.35,
+                        "music_mode": "normal",
+                        "keywords": _extract_bengali_keywords(gap_text),
+                        "narration_text": gap_text,
                         "color_grade": _scene_grade_for_text(gap_text),
                         "graphic": graphic, "show_overlay": False,
                         "overlay_headline": graphic["heading"], "overlay_subtext": ""
@@ -428,9 +663,13 @@ def _enforce_variety_and_pacing(
         if actual_dur <= 0:
             continue
 
-        vtype = sc.get("visual_type") or sc.get("type") or "stock_footage"
-        if vtype not in ("stock_footage", "motion_graphic"):
+        raw_vtype = sc.get("visual_type") or sc.get("type") or "stock_footage"
+        if raw_vtype in ("stock_photo", "photo", "image", "picture"):
             vtype = "stock_footage"
+        elif raw_vtype not in ("stock_footage", "motion_graphic"):
+            vtype = "stock_footage"
+        else:
+            vtype = raw_vtype
 
         if is_rapid:
             if consecutive_rapid_stock >= 4:
@@ -484,20 +723,44 @@ def _enforce_variety_and_pacing(
                 if not queries:
                     queries.append(f"{fallback_queries[idx % len(fallback_queries)]} wide")
 
-        graphic = _normalize_graphic(sc, len(cleaned), transcript_text=seg_txt, title=title)
+        scene_idx = len(cleaned)
+        graphic = _normalize_graphic(sc, scene_idx, transcript_text=seg_txt, title=title)
         accent = "red" if sc.get("accent") == "red" or idx % 2 == 0 else "gold"
+        story_beat = _normalize_story_beat(sc.get("story_beat"), start, total_duration)
+        raw_motion = str(sc.get("motion_effect") or motions[idx % len(motions)])
+        camera_preset = _normalize_camera_preset(sc.get("camera_preset"), raw_motion, scene_idx)
+        motion_effect = raw_motion if raw_motion in MOTION_TO_CAMERA else CAMERA_TO_MOTION.get(camera_preset, "slow_zoom_in")
+        text_preset = _normalize_text_preset(sc.get("text_preset"), graphic["kind"], story_beat, seg_txt)
+        transition = _normalize_transition(sc.get("transition"), story_beat, scene_idx)
+        visual_effect = _normalize_visual_effect(sc.get("visual_effect"), seg_txt, story_beat)
+        media_preference = _normalize_media_preference(sc.get("media_preference"), raw_vtype, visual_effect, scene_idx)
+        try:
+            tr_dur = max(0.15, min(0.8, float(sc.get("transition_duration") or 0.35)))
+        except (TypeError, ValueError):
+            tr_dur = 0.35
+
         cleaned.append({
-            "scene_id": len(cleaned) + 1,
+            "scene_id": scene_idx + 1,
             "start": start,
             "end": end,
             "duration": actual_dur,
+            "story_beat": story_beat,
             "visual_type": vtype,
             "type": vtype,
+            "media_preference": media_preference,
+            "visual_effect": visual_effect,
             "rapid_cut": is_rapid,
             "search_queries": queries,
             "search_query": queries[0] if queries else "",
             "accent": accent,
-            "motion_effect": sc.get("motion_effect") or motions[idx % len(motions)],
+            "motion_effect": motion_effect,
+            "camera_preset": camera_preset,
+            "text_preset": text_preset,
+            "transition": transition,
+            "transition_duration": round(tr_dur, 2),
+            "music_mode": _normalize_music_mode(sc.get("music_mode"), story_beat),
+            "keywords": _extract_bengali_keywords(seg_txt, sc.get("keywords")),
+            "narration_text": seg_txt,
             "color_grade": _scene_grade_for_text(seg_txt, str(sc.get("color_grade") or "")),
             "graphic": graphic,
             "show_overlay": bool(sc.get("show_overlay", idx % 4 == 1)) and not is_rapid,
@@ -506,7 +769,6 @@ def _enforce_variety_and_pacing(
         })
         cursor = end
 
-    # Fill the remaining narration tail without shortening the audio timeline.
     if cleaned and cleaned[-1]["end"] < total_duration:
         gap = round(total_duration - cleaned[-1]["end"], 3)
         if gap <= 3.5:
@@ -519,14 +781,28 @@ def _enforce_variety_and_pacing(
                 end = round(min(total_duration, start + 5.5), 3)
                 seg_txt = _find_segment_text_for_range(segments, start, end, fallback_full)
                 derived = _derive_topic_from_transcript(seg_txt, s_idx, title=title)
-                query = derived["query"]
+                tail_beat = _normalize_story_beat(None, start, total_duration)
+                tail_motion = motions[s_idx % len(motions)]
+                tail_cam = _normalize_camera_preset(None, tail_motion, s_idx)
                 cleaned.append({
                     "scene_id": s_idx + 1, "start": start, "end": end,
-                    "duration": round(end - start, 3), "visual_type": "motion_graphic",
-                    "type": "motion_graphic", "rapid_cut": False,
+                    "duration": round(end - start, 3),
+                    "story_beat": tail_beat,
+                    "visual_type": "motion_graphic",
+                    "type": "motion_graphic",
+                    "media_preference": "video",
+                    "visual_effect": "none",
+                    "rapid_cut": False,
                     "search_queries": [], "search_query": "",
                     "accent": "red" if s_idx % 2 == 0 else "gold",
-                    "motion_effect": motions[s_idx % len(motions)],
+                    "motion_effect": tail_motion,
+                    "camera_preset": tail_cam,
+                    "text_preset": _normalize_text_preset(None, "title_card", tail_beat, seg_txt),
+                    "transition": _normalize_transition(None, tail_beat, s_idx),
+                    "transition_duration": 0.35,
+                    "music_mode": "normal",
+                    "keywords": _extract_bengali_keywords(seg_txt),
+                    "narration_text": seg_txt,
                     "color_grade": _scene_grade_for_text(seg_txt),
                     "graphic": {"kind": "title_card", "heading": derived["heading"],
                                 "subheading": "", "items": derived["items"]},
@@ -534,8 +810,8 @@ def _enforce_variety_and_pacing(
                 })
                 cursor = end
 
+    _apply_shock_effect_cap(cleaned, max_total=3)
     return cleaned
-
 
 
 def _is_valid_provider_plan(
@@ -561,7 +837,7 @@ def _is_valid_provider_plan(
         queries = scene.get("search_queries", scene.get("search_query", []))
         if isinstance(queries, str):
             queries = [queries]
-        if scene.get("visual_type") == "stock_footage" and not queries:
+        if scene.get("visual_type") in ("stock_footage", "stock_photo", "photo") and not queries:
             continue
         valid_count += 1
     return valid_count >= max(1, min(3, len(plan["scenes"]) // 3))
@@ -753,6 +1029,5 @@ def create_scene_plan(
     else:
         transcript_text = str(transcript or "")
 
-    # Always use the full audio duration (never truncate to the first 4-second segment!)
     total_duration = max(audio_duration or 0.0, max_seg_end, 4.0)
     return plan_scenes(transcript_text, total_duration, title=doc_title, segments=segments)

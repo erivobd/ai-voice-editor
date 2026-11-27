@@ -59,6 +59,33 @@ def _search_pexels_video(query, api_key, used_ids):
     return None, None
 
 
+def _search_pexels_photo(query, api_key, used_ids):
+    if not api_key:
+        return None, None
+    try:
+        r = requests.get(
+            "https://api.pexels.com/v1/search",
+            headers={"Authorization": api_key, "User-Agent": USER_AGENT},
+            params={"query": query, "orientation": "landscape", "per_page": 10},
+            timeout=20
+        )
+        if r.status_code != 200:
+            return None, None
+        for p in r.json().get("photos", []):
+            pid = f"pexels_img_{p.get('id')}"
+            if pid in used_ids:
+                continue
+            if (p.get("width") or 0) < (p.get("height") or 0):
+                continue
+            src = p.get("src") or {}
+            url = src.get("large2x") or src.get("landscape") or src.get("original")
+            if url:
+                return pid, url
+    except Exception as e:
+        print(f"[WARN] Pexels photo search error for '{query}': {e}", flush=True)
+    return None, None
+
+
 def _search_pixabay_video(query, api_key, used_ids):
     if not api_key:
         return None, None
@@ -266,8 +293,36 @@ def _image_to_ken_burns_mp4(img_path, out_mp4, duration, scene_id):
     return out_mp4
 
 
+def _find_video_asset(queries, pexels_key, pixabay_key, used_ids):
+    for q in queries:
+        found_id, found_url = _search_pexels_video(q, pexels_key, used_ids)
+        if found_url:
+            return "video", found_id, found_url
+        found_id, found_url = _search_pixabay_video(q, pixabay_key, used_ids)
+        if found_url:
+            return "video", found_id, found_url
+    return None, None, None
+
+
+def _find_photo_asset(queries, pexels_key, pixabay_key, used_ids):
+    for q in queries:
+        found_id, found_url = _search_pexels_photo(q, pexels_key, used_ids)
+        if found_url:
+            return "photo", found_id, found_url
+        found_id, found_url = _search_pixabay_photo(q, pixabay_key, used_ids)
+        if found_url:
+            return "photo", found_id, found_url
+        found_id, found_url = _search_wikimedia_cc0_photo(q, used_ids)
+        if found_url:
+            return "photo", found_id, found_url
+        found_id, found_url = _search_nasa_photo(q, used_ids)
+        if found_url:
+            return "photo", found_id, found_url
+    return None, None, None
+
+
 def collect_stock_footage(scene_plan):
-    update_status("collecting_footage", "প্রতিটি দৃশ্যের জন্য প্রাসঙ্গিক ও ক্রেডিট-মুক্ত মিডিয়া সংগ্রহ করা হচ্ছে...", percent=54)
+    update_status("collecting_footage", "প্রতিটি দৃশ্যের জন্য প্রাসঙ্গিক HD ভিডিও ও Ken Burns ছবি সংগ্রহ করা হচ্ছে...", percent=54)
 
     pexels_key = os.environ.get("PEXELS_API_KEY", "").strip()
     pixabay_key = os.environ.get("PIXABAY_API_KEY", "").strip()
@@ -292,34 +347,16 @@ def collect_stock_footage(scene_plan):
             queries = [scene["search_query"]]
 
         dest_mp4 = raw_dir / f"scene_{scene['scene_id']:03d}.mp4"
-        media_kind = None
-        found_id = None
-        found_url = None
+        prefer_photo = str(scene.get("media_preference") or "video").strip().lower() == "photo"
 
-        for q in queries:
-            found_id, found_url = _search_pexels_video(q, pexels_key, used_ids)
-            if found_url:
-                media_kind = "video"
-                break
-            found_id, found_url = _search_pixabay_video(q, pixabay_key, used_ids)
-            if found_url:
-                media_kind = "video"
-                break
-
-        if not found_url:
-            for q in queries:
-                found_id, found_url = _search_pixabay_photo(q, pixabay_key, used_ids)
-                if found_url:
-                    media_kind = "photo"
-                    break
-                found_id, found_url = _search_nasa_photo(q, used_ids)
-                if found_url:
-                    media_kind = "photo"
-                    break
-                found_id, found_url = _search_wikimedia_cc0_photo(q, used_ids)
-                if found_url:
-                    media_kind = "photo"
-                    break
+        if prefer_photo:
+            media_kind, found_id, found_url = _find_photo_asset(queries, pexels_key, pixabay_key, used_ids)
+            if not found_url:
+                media_kind, found_id, found_url = _find_video_asset(queries, pexels_key, pixabay_key, used_ids)
+        else:
+            media_kind, found_id, found_url = _find_video_asset(queries, pexels_key, pixabay_key, used_ids)
+            if not found_url:
+                media_kind, found_id, found_url = _find_photo_asset(queries, pexels_key, pixabay_key, used_ids)
 
         if found_url and found_id:
             try:
@@ -335,6 +372,7 @@ def collect_stock_footage(scene_plan):
                 used_ids.add(found_id)
                 scene["footage_path"] = str(dest_mp4)
                 scene["footage_source_id"] = found_id
+                scene["resolved_media_kind"] = media_kind
             except Exception as e:
                 print(f"[WARN] Media fetch/prepare failed for scene {scene['scene_id']}: {e}", flush=True)
                 scene["footage_path"] = None
