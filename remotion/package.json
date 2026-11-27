@@ -1,0 +1,19 @@
+{
+  "name": "documentary-remotion-renderer",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "remotion bundle src/index.ts",
+    "render": "remotion render src/index.ts Main ../final_documentary.mp4 --codec=h264 --concurrency=2"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.517",
+    "remotion": "4.0.517",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.7",
+    "typescript": "5.9.3"
+  }
+}
